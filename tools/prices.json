@@ -1,0 +1,8 @@
+{
+  "default": { "in": 10, "out": 50 },
+  "claude-fable": { "in": 10, "out": 50 },
+  "claude-mythos": { "in": 10, "out": 50 },
+  "claude-opus": { "in": 5, "out": 25 },
+  "claude-sonnet": { "in": 3, "out": 15 },
+  "claude-haiku": { "in": 1, "out": 5 }
+}

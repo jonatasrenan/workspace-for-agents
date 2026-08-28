@@ -1,0 +1,7 @@
+workspace/
+repos/
+node_modules/
+.shares.json
+.env
+.claude/settings.local.json
+.DS_Store
