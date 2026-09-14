@@ -1,19 +1,19 @@
 /* global marked, mermaid */
-// Painel do Workspace for Agents: dois níveis de seleção (repo → task), dados via
-// /api/state + SSE (/api/events). Além das abas de .md, cada task tem os
-// painéis vivos Sala / Agentes / Logs / Custos. Seleção e filtros persistem
-// em localStorage.
+// Workspace for Agents panel: two levels of selection (repo → task), data via
+// /api/state + SSE (/api/events). Besides the .md tabs, each task has the
+// live panels Room / Agents / Logs / Costs. Selection and filters persist
+// in localStorage.
 mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });
 
-// Tachado só com ~~duplo~~: o default do marked/GFM aceita ~simples~, o que
-// transforma aproximações ("~0,5M ... ~30 B") em texto riscado e quebra o ** no meio.
+// Strikethrough only with ~~double~~: marked/GFM's default accepts ~single~, which
+// turns approximations ("~0.5M ... ~30 B") into struck-through text and breaks the ** in the middle.
 marked.use({
   tokenizer: {
     del(src) {
       if (!src.startsWith('~')) return false;
       const cap = /^~~(?=[^\s~])([\s\S]*?[^\s~])~~(?!~)/.exec(src);
       if (cap) return { type: 'del', raw: cap[0], text: cap[1], tokens: this.lexer.inlineTokens(cap[1]) };
-      return { type: 'text', raw: '~', text: '~' }; // ~ solto = "aproximadamente", nunca risco
+      return { type: 'text', raw: '~', text: '~' }; // stray ~ = "approximately", never strikethrough
     },
   },
 });
@@ -22,11 +22,11 @@ const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 let mermaidSeq = 0;
 
-// --- modo estático (página compartilhada de UM repo) ---
-// tools/share.mjs publica ESTA mesma app com o state do repo embutido em
-// window.__DATA__: sem SSE e sem POST /api/bus (a Sala fica só de leitura, as
-// perguntas ao humano aparecem como registro), atualização por ETag da própria
-// página. __NO_COSTS__ = publicado com --sem-custos (painel Custos fora).
+// --- static mode (shared page for ONE repo) ---
+// tools/share.mjs publishes THIS SAME app with the repo's state embedded in
+// window.__DATA__: no SSE and no POST /api/bus (the Room becomes read-only,
+// questions to the human appear as a record), page updates via the page's own ETag.
+// __NO_COSTS__ = published with --sem-custos (Costs panel left out).
 const STATIC = !!window.__STATIC__;
 const NO_COSTS = !!window.__NO_COSTS__;
 
@@ -34,28 +34,28 @@ const LS_KEY = 'wfa:sel';
 const LS_LOGS = 'wfa:logfilter';
 const state = {
   repos: [],
-  totals: null, // agregados do projeto (tokens + usd + aguardando humano) vindos do server
-  pool: [], // guardrails/pool.json — resolve título/verificação dos guardrails da DAG
-  agentDefs: {}, // .claude/agents/<nome>.md → { description, resumo } (via server)
-  repo: null, // slug do repo selecionado
-  task: null, // slug da task selecionada; null = visão geral do repo
-  tab: null, // nome do .md ativo OU id de painel ("panel:sala", ...)
+  totals: null, // project aggregates (tokens + usd + awaiting human) coming from the server
+  pool: [], // guardrails/pool.json — resolves title/check for the DAG's guardrails
+  agentDefs: {}, // .claude/agents/<name>.md → { description, resumo } (via server)
+  repo: null, // slug of the selected repo
+  task: null, // slug of the selected task; null = repo overview
+  tab: null, // active .md name OR panel id ("panel:sala", ...)
 };
 
-// painéis vivos — abas irmãs das abas de .md, sempre presentes na task
-// (o roster de Agentes vive na visão geral do repo; a task mostra só a faixa "atuando")
+// live panels — tabs alongside the .md tabs, always present in the task
+// (the Agents roster lives in the repo overview; the task shows only the "active" strip)
 const PANELS = [
   { id: 'panel:dag', label: 'DAG' },
   { id: 'panel:diff', label: 'Diff' },
-  { id: 'panel:timeline', label: 'Linha do tempo' },
-  { id: 'panel:sala', label: 'Sala' },
+  { id: 'panel:timeline', label: 'Timeline' },
+  { id: 'panel:sala', label: 'Room' },
   { id: 'panel:logs', label: 'Logs' },
-  { id: 'panel:custos', label: 'Custos' },
+  { id: 'panel:custos', label: 'Costs' },
 ].filter((p) => !(NO_COSTS && p.id === 'panel:custos'));
 const isPanel = (tab) => PANELS.some((p) => p.id === tab);
 
-// Linha do tempo: por padrão os logs entram só com warn/error (o resto é ruído
-// ao lado das mensagens); o toggle "todos os níveis" persiste.
+// Timeline: by default logs only come in with warn/error (the rest is noise
+// next to the messages); the "all levels" toggle persists.
 const LS_TL = 'wfa:timeline';
 const tlFilter = { allLevels: false };
 try {
@@ -63,7 +63,7 @@ try {
 } catch {}
 
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'];
-const logFilter = { levels: [...LOG_LEVELS], source: '' }; // padrão: tudo visível
+const logFilter = { levels: [...LOG_LEVELS], source: '' }; // default: everything visible
 try {
   const s = JSON.parse(localStorage.getItem(LS_LOGS));
   if (Array.isArray(s?.levels)) logFilter.levels = s.levels.filter((l) => LOG_LEVELS.includes(l));
@@ -74,22 +74,28 @@ function saveLogFilter() {
   } catch {}
 }
 
-// Sala: auto-scroll gruda no fim, a menos que o usuário tenha rolado para cima;
-// rascunhos e foco da caixa de resposta sobrevivem ao re-render do SSE.
+// Room: auto-scroll sticks to the bottom unless the user has scrolled up;
+// drafts and the reply box's focus survive SSE re-renders.
 let salaStick = true;
 const salaDrafts = {};
 let salaFocusKey = null;
 
 const STATUS = {
-  todo: { icon: '○', label: 'todo', cls: 'todo' },
-  'em-andamento': { icon: '▶', label: 'em andamento', cls: 'andamento' },
-  concluida: { icon: '✓', label: 'concluída', cls: 'concluida' },
+  todo: { icon: '○', label: 'to do', cls: 'todo' },
+  'em-andamento': { icon: '▶', label: 'in progress', cls: 'andamento' },
+  concluida: { icon: '✓', label: 'done', cls: 'concluida' },
 };
 const st = (s) => STATUS[s] || STATUS.todo;
 
 const AGENT_STATUS = { ocioso: 'idle', executando: 'run', concluido: 'done' };
+// display label for the raw agent status value (the CSS class above stays untranslated)
+const AGENT_STATUS_LABEL = { ocioso: 'idle', executando: 'running', concluido: 'done' };
+const agentStatusLabel = (s) => AGENT_STATUS_LABEL[s] || s;
 
-// colapso das colunas Repos/Tasks — persiste em chaves separadas
+const ACCESS_TYPE_LABEL = { app: 'app', metricas: 'metrics', dashboard: 'dashboard', outro: 'other' };
+const accessTypeLabel = (s) => ACCESS_TYPE_LABEL[s] || s;
+
+// collapse of the Repos/Tasks columns — persists under separate keys
 const COL_KEYS = { repos: 'wfa:col:repos', tasks: 'wfa:col:tasks' };
 const collapsed = { repos: false, tasks: false };
 try {
@@ -101,7 +107,7 @@ function applyCollapse() {
     $(`#${k}-col`).classList.toggle('collapsed', collapsed[k]);
     const btn = $(`#${k}-toggle`);
     btn.textContent = collapsed[k] ? '⟩' : '⟨';
-    btn.title = collapsed[k] ? 'expandir coluna' : 'recolher coluna';
+    btn.title = collapsed[k] ? 'expand column' : 'collapse column';
   }
 }
 function wireToggles() {
@@ -117,7 +123,7 @@ function wireToggles() {
   }
 }
 
-// iniciais para o trilho colapsado: 2 letras das 2 primeiras palavras (ou 2 chars)
+// initials for the collapsed rail: 2 letters from the first 2 words (or 2 chars)
 function repoInitials(title) {
   const words = String(title || '?').split(/[^a-zA-Z0-9]+/).filter(Boolean);
   const s = words.length >= 2 ? words[0][0] + words[1][0] : (words[0] || '?').slice(0, 2);
@@ -125,7 +131,7 @@ function repoInitials(title) {
 }
 
 function saveSel() {
-  if (STATIC) return; // página compartilhada não guarda seleção no navegador de quem lê
+  if (STATIC) return; // shared page doesn't keep the selection in the reader's browser
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({ repo: state.repo, task: state.task, tab: state.tab }));
   } catch {}
@@ -144,7 +150,7 @@ function restoreSel() {
 const currentRepo = () => state.repos.find((r) => r.slug === state.repo) || null;
 const currentTask = () => currentRepo()?.tasks.find((t) => t.slug === state.task) || null;
 
-// corta em fronteira de palavra (~n chars) com reticências
+// cuts at a word boundary (~n chars) with an ellipsis
 function truncWord(s, n = 24) {
   if (s.length <= n) return s;
   const cut = s.slice(0, n + 1);
@@ -156,11 +162,11 @@ function fileH1(file) {
   return (file.content.match(/^#\s+(.+)$/m) || [])[1]?.trim() || '';
 }
 
-// rótulo curto da aba: H1 cortado no primeiro "—" ("Plano", "Journal"...);
-// 00-enunciado.md (H1 = título da task) vira "Enunciado"; fora do padrão,
-// primeiro segmento truncado ~24 chars em palavra. O H1 completo fica no conteúdo.
+// short tab label: H1 cut at the first "—" ("Plano", "Journal"...);
+// 00-enunciado.md (H1 = task title) becomes "Statement"; outside that pattern,
+// first segment truncated to ~24 chars at a word boundary. The full H1 stays in the content.
 function tabLabel(file) {
-  if (file.name === '00-enunciado.md') return 'Enunciado';
+  if (file.name === '00-enunciado.md') return 'Statement';
   const h1 = fileH1(file);
   if (!h1) return file.name.replace(/^\d+-/, '').replace(/\.md$/, '');
   return truncWord(h1.split('—')[0].trim() || h1);
@@ -182,16 +188,16 @@ function relTime(ts) {
   const d = new Date(ts);
   if (isNaN(d)) return '—';
   const s = Math.max(0, (Date.now() - d.getTime()) / 1000);
-  if (s < 60) return `${Math.floor(s)}s atrás`;
-  if (s < 3600) return `${Math.floor(s / 60)}min atrás`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h atrás`;
-  return `${Math.floor(s / 86400)}d atrás`;
+  if (s < 60) return `${Math.floor(s)}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
 }
 
-// --- tempo (task, repo, projeto) ---
-// O server manda timing = { start, last, targetMin, running } por task: start é o
-// primeiro evento real (mensagem/log/custo). O decorrido de uma task viva é
-// recalculado no cliente (tick de 30s), sem depender de novo evento no SSE.
+// --- timing (task, repo, project) ---
+// The server sends timing = { start, last, targetMin, running } per task: start is the
+// first real event (message/log/cost). The elapsed time of a live task is
+// recalculated on the client (30s tick), without depending on a new SSE event.
 const MIN = 60000;
 function fmtDur(ms) {
   const total = Math.max(0, Math.round(ms / MIN));
@@ -208,15 +214,15 @@ function taskElapsed(task) {
 const sumElapsed = (tasks) => (tasks || []).reduce((a, t) => a + taskElapsed(t), 0);
 const sumTarget = (tasks) => (tasks || []).reduce((a, t) => a + (t?.timing?.targetMin || 0) * MIN, 0);
 
-// verde até 75% do alvo · âmbar acima · vermelho estourado (sem alvo: neutro)
+// green up to 75% of the target · amber above · red overrun (no target: neutral)
 function timeClass(ms, targetMs) {
   if (!targetMs) return 'tt-none';
   const p = ms / targetMs;
   return p > 1 ? 'tt-over' : p > 0.75 ? 'tt-warn' : 'tt-ok';
 }
 
-// cronômetro da task (topo, junto do breadcrumb): decorrido vs alvo + barra com
-// marcos a 25/50/75%. Task concluída mostra a duração total, estática.
+// task timer (top, next to the breadcrumb): elapsed vs target + bar with
+// milestones at 25/50/75%. A completed task shows the total, static duration.
 function taskTimerHtml(task) {
   const t = task?.timing;
   if (!t?.start) return '<span class="task-timer" id="task-timer"></span>';
@@ -228,45 +234,45 @@ function taskTimerHtml(task) {
   const pct = targetMs ? Math.min(100, (ms / targetMs) * 100) : 0;
   const bar = targetMs
     ? `<span class="tt-bar"><i style="width:${pct.toFixed(1)}%"></i>${[25, 50, 75]
-        .map((m) => `<u style="left:${m}%" title="${fmtDur((targetMs * m) / 100)} (${m}% do tempo-alvo)"></u>`)
+        .map((m) => `<u style="left:${m}%" title="${fmtDur((targetMs * m) / 100)} (${m}% of the target time)"></u>`)
         .join('')}</span>`
     : '';
   const tip = [
-    `início ${shortTs(t.start).slice(0, 5)}`,
-    t.running ? 'em andamento' : `último evento ${shortTs(t.last).slice(0, 5)}`,
-    targetMs ? `tempo-alvo ${fmtDur(targetMs)}` : 'sem tempo-alvo no enunciado',
+    `start ${shortTs(t.start).slice(0, 5)}`,
+    t.running ? 'in progress' : `last event ${shortTs(t.last).slice(0, 5)}`,
+    targetMs ? `target time ${fmtDur(targetMs)}` : 'no target time in the statement',
   ].join(' · ');
   return `<span class="task-timer ${cls}${t.running ? ' running' : ''}" id="task-timer" title="${esc(tip)}">
     <span class="tt-icon">⏱</span><span class="tt-elapsed">${fmtDur(ms)}</span>${alvo}${bar}</span>`;
 }
 
-// segmento de tempo da linha de progresso do repo: soma das durações das tasks
-// (a ativa entra com o decorrido) contra a soma dos tempos-alvo
+// time segment of the repo's progress line: sum of the tasks' durations
+// (the active one counts its elapsed time) against the sum of the target times
 function repoTimeHtml(repo) {
   const tasks = repo?.tasks || [];
   const ms = sumElapsed(tasks);
   if (!ms) return '';
   const targetMs = sumTarget(tasks.filter((t) => t.timing?.start));
   const cls = timeClass(ms, targetMs);
-  const alvo = targetMs ? ` <span class="rt-target">/ ${fmtDur(targetMs)} alvo</span>` : '';
-  return `tempo <b class="${cls}">${fmtDur(ms)}</b>${alvo}`;
+  const alvo = targetMs ? ` <span class="rt-target">/ ${fmtDur(targetMs)} target</span>` : '';
+  return `time <b class="${cls}">${fmtDur(ms)}</b>${alvo}`;
 }
 
-// --- dependências entre tasks (meta.depends_on, resolvido pelo server) ---
+// --- dependencies between tasks (meta.depends_on, resolved by the server) ---
 const openDeps = (t) => (t.depends_on || []).filter((d) => !d.missing && d.status !== 'concluida');
 const depNum = (slug) => (String(slug).match(/^(\d+)/) || [])[1] || slug;
 
-// linha discreta no topo da visão da task: "Depende de: <links>"
+// discreet line at the top of the task view: "Depends on: <links>"
 function renderDepsLine(task) {
   const deps = task.depends_on || [];
   if (!deps.length) return '';
   const links = deps.map((d) => {
-    if (d.missing) return `<span class="dep-missing" title="task não encontrada no repo">${esc(d.title)}</span>`;
+    if (d.missing) return `<span class="dep-missing" title="task not found in the repo">${esc(d.title)}</span>`;
     const s = st(d.status);
     const ok = d.status === 'concluida';
     return `<a class="dep-link ${ok ? 'dep-ok' : 'dep-wait'}" data-task="${esc(d.slug)}" title="${esc(d.slug)}: ${s.label}">${s.icon} ${esc(d.title)}</a>`;
   });
-  return `<div class="deps-line">Depende de: ${links.join('<span class="dep-sep">·</span>')}</div>`;
+  return `<div class="deps-line">Depends on: ${links.join('<span class="dep-sep">·</span>')}</div>`;
 }
 
 function wireDeps(content) {
@@ -311,7 +317,7 @@ async function renderMermaidIn(container) {
   }
 }
 
-// valida a seleção contra os dados atuais (repo/task/aba podem ter sumido)
+// validates the selection against the current data (repo/task/tab may have disappeared)
 function reconcile() {
   if (!state.repos.some((r) => r.slug === state.repo)) {
     state.repo = state.repos[0]?.slug ?? null;
@@ -332,7 +338,7 @@ function reconcile() {
   }
 }
 
-// --- coluna de repos (colapsável: trilho de iniciais + dot) ---
+// --- repos column (collapsible: initials + dot rail) ---
 function renderRepos() {
   const el = $('#repos');
   if (!state.repos.length) {
@@ -348,19 +354,19 @@ function renderRepos() {
       const active = r.slug === state.repo ? ' active' : '';
       const attn = r.awaiting ? ' attn' : '';
       if (collapsed.repos) {
-        let tip = `${r.title} — ${total ? `${total} task${total === 1 ? '' : 's'}` : 'sem tasks'}`;
-        if (r.awaiting) tip += ` · ✋ ${r.awaiting} aguardando você`;
-        if (allDone) tip += ' · ✓ concluído';
+        let tip = `${r.title} — ${total ? `${total} task${total === 1 ? '' : 's'}` : 'no tasks'}`;
+        if (r.awaiting) tip += ` · ✋ ${r.awaiting} awaiting you`;
+        if (allDone) tip += ' · ✓ done';
         return `<button class="repo-rail${active}${attn}" data-repo="${esc(r.slug)}" title="${esc(tip)}">
           <span class="rail-ini">${esc(repoInitials(r.title))}</span><span class="dot ${dot}"></span></button>`;
       }
       const badges = [];
-      badges.push(total ? `<i class="sb">${total} task${total === 1 ? '' : 's'}</i>` : '<i class="sb sb-muted">sem tasks</i>');
+      badges.push(total ? `<i class="sb">${total} task${total === 1 ? '' : 's'}</i>` : '<i class="sb sb-muted">no tasks</i>');
       if (blocked) badges.push(`<i class="sb sb-lock">${blocked} 🔒</i>`);
-      if (r.awaiting) badges.push(`<i class="sb sb-wait" title="mensagens aguardando sua resposta">✋ ${r.awaiting} aguardando você</i>`);
-      if (allDone) badges.push('<i class="sb sb-done">✓ concluído</i>');
-      else if (r.status) badges.push(`<i class="sb sb-st" title="status do repo">${esc(r.status)}</i>`);
-      if (r.tokens?.total) badges.push(`<i class="sb sb-tok" title="tokens somados do repo">${fmtTok(r.tokens.total)} tok</i>`);
+      if (r.awaiting) badges.push(`<i class="sb sb-wait" title="messages awaiting your reply">✋ ${r.awaiting} awaiting you</i>`);
+      if (allDone) badges.push('<i class="sb sb-done">✓ done</i>');
+      else if (r.status) badges.push(`<i class="sb sb-st" title="repo status">${esc(r.status)}</i>`);
+      if (r.tokens?.total) badges.push(`<i class="sb sb-tok" title="repo's total tokens">${fmtTok(r.tokens.total)} tok</i>`);
       return `<button class="repo${active}${attn}" data-repo="${esc(r.slug)}">
         <span class="repo-title"><span class="dot ${dot}" title="${esc(r.status || '')}"></span>${esc(r.title)}</span>
         <span class="repo-badges">${badges.join('')}</span>
@@ -380,7 +386,7 @@ function renderRepos() {
   });
 }
 
-// --- coluna de tasks do repo selecionado (colapsável: trilho de ícones de status) ---
+// --- selected repo's tasks column (collapsible: status icon rail) ---
 function renderTasksCol() {
   const el = $('#tasks');
   const repo = currentRepo();
@@ -391,29 +397,29 @@ function renderTasksCol() {
   }
   const items = [];
   if (collapsed.tasks) {
-    items.push(`<button class="task-rail overview${state.task === null ? ' active' : ''}" data-task="" title="Visão geral">📋</button>`);
+    items.push(`<button class="task-rail overview${state.task === null ? ' active' : ''}" data-task="" title="Overview">📋</button>`);
     for (const t of repo.tasks) {
       const s = st(t.status);
       const icon = t.blocked ? '🔒' : s.icon;
-      let tip = t.blocked ? `${t.title} — aguarda ${openDeps(t).map((d) => d.title).join(', ')}` : `${t.title} — ${s.label}`;
-      if (t.awaiting) tip += ` · ✋${t.awaiting} aguardando você`;
+      let tip = t.blocked ? `${t.title} — awaiting ${openDeps(t).map((d) => d.title).join(', ')}` : `${t.title} — ${s.label}`;
+      if (t.awaiting) tip += ` · ✋${t.awaiting} awaiting you`;
       items.push(`<button class="task-rail ${s.cls}${t.blocked ? ' blocked' : ''}${t.awaiting ? ' attn' : ''}${t.slug === state.task ? ' active' : ''}"
         data-task="${esc(t.slug)}" title="${esc(tip)}">${icon}</button>`);
     }
   } else {
-    items.push(`<button class="task overview${state.task === null ? ' active' : ''}" data-task="">📋 Visão geral</button>`);
+    items.push(`<button class="task overview${state.task === null ? ' active' : ''}" data-task="">📋 Overview</button>`);
     for (const t of repo.tasks) {
       const s = st(t.status);
-      // task bloqueada por dependência não-concluída: cadeado + esmaecida
+      // task blocked by an unfinished dependency: lock + dimmed
       const open = openDeps(t);
       const icon = t.blocked ? '🔒' : s.icon;
-      let tip = t.blocked ? `${t.slug}: aguarda ${open.map((d) => d.title).join(', ')}` : `${t.slug}: ${s.label}`;
-      if (t.awaiting) tip += ` — ${t.awaiting} pergunta(s) aguardando você`;
+      let tip = t.blocked ? `${t.slug}: awaiting ${open.map((d) => d.title).join(', ')}` : `${t.slug}: ${s.label}`;
+      if (t.awaiting) tip += ` — ${t.awaiting} question(s) awaiting you`;
       const chips = [];
-      if (t.awaiting) chips.push(`<span class="pill-wait" title="aguardando sua resposta">✋${t.awaiting}</span>`);
+      if (t.awaiting) chips.push(`<span class="pill-wait" title="awaiting your reply">✋${t.awaiting}</span>`);
       if (t.dag?.nodes?.length) {
         const ds = dagStats(t.dag);
-        chips.push(`<span class="dag-badge ${ds.alert ? 'dag-block' : ds.done === ds.total ? 'dag-done' : 'dag-todo'}" title="nós da DAG concluídos">${ds.done}/${ds.total}</span>`);
+        chips.push(`<span class="dag-badge ${ds.alert ? 'dag-block' : ds.done === ds.total ? 'dag-done' : 'dag-todo'}" title="completed DAG nodes">${ds.done}/${ds.total}</span>`);
       }
       items.push(`<button class="task ${s.cls}${t.blocked ? ' blocked' : ''}${t.awaiting ? ' attn' : ''}${t.slug === state.task ? ' active' : ''}" data-task="${esc(t.slug)}"
         title="${esc(tip)}"><span class="ticon">${icon}</span><span class="task-title">${esc(truncWord(t.title, 26))}</span>${chips.join('')}</button>`);
@@ -431,7 +437,7 @@ function renderTasksCol() {
   });
 }
 
-// --- abas: .md da task + painéis vivos (irmãs, separadas por um traço) ---
+// --- tabs: task .md files + live panels (siblings, separated by a divider) ---
 function renderTabs() {
   const el = $('#tabs');
   const task = currentTask();
@@ -443,8 +449,8 @@ function renderTabs() {
   el.style.display = '';
   const mdTabs = task.files.map((f) => {
     const h1 = fileH1(f);
-    // stub: arquivo ainda no template — aba esmaecida (mesma cara das tasks bloqueadas)
-    const tip = f.stub ? 'ainda sem conteúdo' : h1 ? `${f.name} — ${h1}` : f.name;
+    // stub: file still at the template — dimmed tab (same look as blocked tasks)
+    const tip = f.stub ? 'no content yet' : h1 ? `${f.name} — ${h1}` : f.name;
     return `<button class="tab${f.stub ? ' stub' : ''}${f.name === state.tab ? ' active' : ''}" data-tab="${esc(f.name)}" title="${esc(tip)}">${esc(tabLabel(f))}</button>`;
   });
   const logs = task.logs || [];
@@ -458,23 +464,23 @@ function renderTabs() {
     if (p.id === 'panel:diff') {
       const n = task.commits?.length || 0;
       if (n) extra = `<span class="minibadge">${n}</span>`;
-      else stub = ' stub'; // task sem commits no workspace — aba esmaecida
+      else stub = ' stub'; // task with no commits in the workspace — dimmed tab
     }
     if (p.id === 'panel:timeline') {
       const n = timelineItems(task).length;
       if (n) extra = `<span class="minibadge">${n}</span>`;
-      else stub = ' stub'; // task ainda sem nenhum evento — aba esmaecida
+      else stub = ' stub'; // task with no events yet — dimmed tab
     }
     if (p.id === 'panel:logs') {
       if (warns) extra += `<span class="minibadge warn">⚠${warns}</span>`;
       if (errs) extra += `<span class="minibadge err">✕${errs}</span>`;
     }
-    if (p.id === 'panel:sala' && task.awaiting) alert = ' waiting'; // pergunta ao humano sem resposta → âmbar
+    if (p.id === 'panel:sala' && task.awaiting) alert = ' waiting'; // unanswered question to the human → amber
     if (p.id === 'panel:dag' && task.dag?.nodes?.length) {
       const s = dagStats(task.dag);
       extra = `<span class="minibadge${s.alert ? ' err' : ''}">${s.done}/${s.total}</span>`;
-      if (s.alert) alert = ' alert'; // guardrail em falha não-aceita → aba vermelha (prioridade sobre o azul)
-      else if (s.running) alert = ' live'; // nó executando → badge pulsa em azul
+      if (s.alert) alert = ' alert'; // unaccepted failed guardrail → red tab (takes priority over blue)
+      else if (s.running) alert = ' live'; // running node → badge pulses blue
     }
     return `<button class="tab panel-tab${alert}${stub}${p.id === state.tab ? ' active' : ''}" data-tab="${p.id}">${p.label}${extra}</button>`;
   });
@@ -482,32 +488,32 @@ function renderTabs() {
   el.querySelectorAll('button.tab').forEach((b) => {
     b.onclick = () => {
       state.tab = b.dataset.tab;
-      if (state.tab === 'panel:sala') salaStick = true; // ao entrar na Sala, gruda no fim
+      if (state.tab === 'panel:sala') salaStick = true; // entering the Room sticks to the bottom
       saveSel();
       renderAll();
     };
   });
 }
 
-// --- painel Sala: timeline da conversa entre agentes (e humano) ---
+// --- Room panel: timeline of the conversation between agents (and the human) ---
 function renderSala(task) {
   const msgs = task.messages || [];
-  if (!msgs.length) return '<div class="panel-empty">sem mensagens ainda — a conversa dos agentes aparece aqui</div>';
+  if (!msgs.length) return '<div class="panel-empty">no messages yet — the agents\' conversation shows up here</div>';
   const items = msgs.map((m, i) => {
     const kind = MSGKIND(m.kind);
     const ask = m.to === 'humano' && (m.kind === 'question' || m.kind === 'decision');
     const key = `${state.repo}/${state.task}/${m.ts || ''}#${i}`;
     const stateBadge =
       m.kind === 'status' && m.meta?.state ? `<span class="msg-state">${esc(m.meta.state)}</span>` : '';
-    // resposta a pergunta vira report; resposta a pedido de decisão vira decision.
-    // Página estática não escreve no bus: a pendência vira registro, sem caixa de resposta.
+    // a reply to a question becomes a report; a reply to a decision request becomes a decision.
+    // The static page doesn't write to the bus: the pending item becomes a record, with no reply box.
     const reply = !ask
       ? ''
       : STATIC
-        ? '<div class="reply-static">aguardando resposta</div>'
+        ? '<div class="reply-static">awaiting reply</div>'
         : `<form class="reply" data-to="${esc(m.from)}" data-kind="${m.kind === 'question' ? 'report' : 'decision'}">
-          <input class="reply-input" data-key="${esc(key)}" placeholder="responder a ${esc(m.from)}…" autocomplete="off" />
-          <button type="submit">enviar</button><span class="reply-err"></span></form>`;
+          <input class="reply-input" data-key="${esc(key)}" placeholder="reply to ${esc(m.from)}…" autocomplete="off" />
+          <button type="submit">send</button><span class="reply-err"></span></form>`;
     return `<div class="msg kind-${kind}${ask ? ' ask' : ''}">
       <div class="msg-head"><span class="msg-ts" title="${esc(m.ts || '')}">${shortTs(m.ts)}</span>
         <span class="msg-route">${esc(m.from || '?')} → ${esc(m.to || '?')}</span>
@@ -519,7 +525,7 @@ function renderSala(task) {
 const MSGKIND = (k) => (['report', 'question', 'decision', 'approval', 'status'].includes(k) ? k : 'report');
 
 function wireSala(content) {
-  if (STATIC) return; // sem caixa de resposta na página compartilhada
+  if (STATIC) return; // no reply box on the shared page
   content.querySelectorAll('form.reply').forEach((f) => {
     const input = f.querySelector('.reply-input');
     if (salaDrafts[input.dataset.key]) input.value = salaDrafts[input.dataset.key];
@@ -554,7 +560,7 @@ function wireSala(content) {
         if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
         input.value = '';
         delete salaDrafts[input.dataset.key];
-        salaStick = true; // a resposta chega via SSE — rola para ela
+        salaStick = true; // the reply arrives via SSE — scroll to it
       } catch (e2) {
         err.textContent = e2.message;
       }
@@ -563,25 +569,25 @@ function wireSala(content) {
   });
 }
 
-// --- Agentes: roster do REPO (visão geral) + faixa "atuando" na task + ficha ---
-// Fonte: agents.json do repo (bus) + definições .claude/agents (state.agentDefs).
-let agentSheet = null; // nome do agente com ficha aberta — sobrevive ao re-render do SSE
+// --- Agents: REPO roster (overview) + "active" strip on the task + sheet ---
+// Source: repo's agents.json (bus) + .claude/agents definitions (state.agentDefs).
+let agentSheet = null; // name of the agent whose sheet is open — survives SSE re-renders
 
-// agentes com atividade na task: last_task = task atual, ou presença em costs/messages dela
+// agents with activity on the task: last_task = current task, or presence in its costs/messages
 function agentsInTask(repo, task) {
   const names = new Set();
   for (const c of task.costs || []) if (c.agente) names.add(c.agente);
-  // "dag" não é agente: é a origem sintética das transições de nó no bus
+  // "dag" is not an agent: it's the synthetic origin of node transitions on the bus
   for (const m of task.messages || []) if (m.from && m.from !== 'humano' && m.from !== 'dag') names.add(m.from);
   for (const a of repo?.agents || []) if (a.last_task === task.slug) names.add(a.name);
-  for (const a of task.agents || []) names.add(a.name); // legado — agents.json da task
+  for (const a of task.agents || []) names.add(a.name); // legacy — task's agents.json
   return [...names];
 }
 
-// roster completo do repo — cards clicáveis (abre a ficha) na visão geral
+// full repo roster — clickable cards (opens the sheet) in the overview
 function renderRoster(repo) {
   const agents = repo.agents || [];
-  if (!agents.length) return '<h2>Agentes</h2><p class="muted">sem agentes ainda</p>';
+  if (!agents.length) return '<h2>Agents</h2><p class="muted">no agents yet</p>';
   const byRepo = tokensByAgent((repo.tasks || []).flatMap((t) => t.costs || []));
   const bySlug = new Map((repo.tasks || []).map((t) => [t.slug, t]));
   const cards = agents.map((a) => {
@@ -590,18 +596,18 @@ function renderRoster(repo) {
     const desc = a.role || state.agentDefs?.[a.name]?.description || '';
     const tok = byRepo[a.name]?.total || 0;
     const lastTitle = a.last_task ? bySlug.get(a.last_task)?.title || a.last_task : '';
-    return `<div class="agent-card clickable" data-agent="${esc(a.name)}" title="abrir ficha de ${esc(a.name)}">
+    return `<div class="agent-card clickable" data-agent="${esc(a.name)}" title="open ${esc(a.name)}'s sheet">
       <div class="agent-head"><span class="adot ${cls}"></span><strong>${esc(a.name)}</strong>
-        <span class="agent-status">${esc(s)}</span></div>
+        <span class="agent-status">${esc(agentStatusLabel(s))}</span></div>
       ${desc ? `<div class="agent-role clamp">${esc(desc)}</div>` : ''}
-      ${lastTitle ? `<div class="agent-last" title="${esc(a.last_task)}">último trabalho: ${esc(lastTitle)}</div>` : ''}
+      ${lastTitle ? `<div class="agent-last" title="${esc(a.last_task)}">last worked on: ${esc(lastTitle)}</div>` : ''}
       <div class="agent-foot"><span title="${esc(a.last_active || '')}">${a.last_active ? relTime(a.last_active) : '—'}</span>
         <span class="agent-tokens">${tok ? `${fmtTok(tok)} tok` : ''}</span></div></div>`;
   });
-  return `<h2>Agentes</h2><div class="agents">${cards.join('')}</div>`;
+  return `<h2>Agents</h2><div class="agents">${cards.join('')}</div>`;
 }
 
-// faixa fina no topo da task: chips dos agentes atuando nela (clicáveis → ficha)
+// thin strip at the top of the task: chips for the agents active on it (clickable → sheet)
 function renderAgentStrip(repo, task) {
   const names = agentsInTask(repo, task);
   if (!names.length) return '';
@@ -610,10 +616,10 @@ function renderAgentStrip(repo, task) {
     const a = byName.get(n) || {};
     const s = a.status || 'ocioso';
     const cls = AGENT_STATUS[s] || 'idle';
-    return `<button class="agent-chip" data-agent="${esc(n)}" title="${esc(n)}: ${esc(s)} — abrir ficha">
+    return `<button class="agent-chip" data-agent="${esc(n)}" title="${esc(n)}: ${esc(agentStatusLabel(s))} — open sheet">
       <span class="adot ${cls}"></span>${esc(n)}</button>`;
   });
-  return `<div class="agent-strip"><span class="strip-label">atuando nesta task</span>${chips.join('')}</div>`;
+  return `<div class="agent-strip"><span class="strip-label">active on this task</span>${chips.join('')}</div>`;
 }
 
 function wireAgentClicks(root) {
@@ -625,7 +631,7 @@ function wireAgentClicks(root) {
   });
 }
 
-// ficha do agente: definição (.claude/agents) + estado do bus + atuação/custos/timeline/logs
+// agent sheet: definition (.claude/agents) + bus state + activity/costs/timeline/logs
 function renderSheet() {
   const el = $('#sheet');
   if (!el) return;
@@ -659,7 +665,7 @@ function renderSheet() {
   const defHtml = def
     ? `${def.description ? `<p class="sheet-desc">${esc(def.description)}</p>` : ''}
        ${def.resumo ? `<p class="sheet-resumo">${esc(def.resumo)}</p>` : ''}`
-    : '<p class="sheet-empty">sem definição registrada — mostrando só os dados do bus</p>';
+    : '<p class="sheet-empty">no definition on record — showing only the bus data</p>';
   const actedHtml = acted.length
     ? acted
         .map((t) => {
@@ -667,9 +673,9 @@ function renderSheet() {
           return `<a class="sheet-task" data-task="${esc(t.slug)}" title="${esc(t.slug)}"><span class="status ${ts.cls}">${ts.icon}</span> ${esc(t.title)}</a>`;
         })
         .join('')
-    : '<p class="sheet-empty">ainda não atuou em nenhuma task deste repo</p>';
+    : '<p class="sheet-empty">hasn\'t worked on any task in this repo yet</p>';
   const msgsHtml = !task
-    ? '<p class="sheet-empty">abra uma task para ver a timeline</p>'
+    ? '<p class="sheet-empty">open a task to see the timeline</p>'
     : msgs.length
       ? msgs
           .map(
@@ -678,9 +684,9 @@ function renderSheet() {
               <div class="mbody">${esc(m.body || '')}</div></div>`
           )
           .join('')
-      : '<p class="sheet-empty">sem mensagens deste agente nesta task</p>';
+      : '<p class="sheet-empty">no messages from this agent in this task</p>';
   const logsHtml = !task
-    ? '<p class="sheet-empty">abra uma task para ver os logs</p>'
+    ? '<p class="sheet-empty">open a task to see the logs</p>'
     : logs.length
       ? logs
           .map(
@@ -688,21 +694,21 @@ function renderSheet() {
               <span class="llv">${esc(l.level || 'info')}</span> ${esc(l.body || '')}</div>`
           )
           .join('')
-      : '<p class="sheet-empty">sem logs deste agente nesta task</p>';
+      : '<p class="sheet-empty">no logs from this agent in this task</p>';
 
   el.innerHTML = `
     <div class="sheet-head"><span class="adot ${cls}"></span><strong>${esc(name)}</strong>
-      <span class="agent-status">${esc(s)}</span>
-      <button class="sheet-close" title="fechar (Esc)">✕</button></div>
+      <span class="agent-status">${esc(agentStatusLabel(s))}</span>
+      <button class="sheet-close" title="close (Esc)">✕</button></div>
     ${bus?.role ? `<div class="sheet-role">${esc(bus.role)}</div>` : ''}
     ${defHtml}
     <div class="sheet-kv">
-      <div><span>última atividade</span><b title="${esc(bus?.last_active || '')}">${bus?.last_active ? relTime(bus.last_active) : '—'}</b></div>
-      <div><span>último trabalho</span><b title="${esc(bus?.last_task || '')}">${lastTitle ? esc(truncWord(lastTitle, 28)) : '—'}</b></div>
-      <div><span>tokens · task selecionada</span><b>${task ? fmtTok(tokTask) : '—'}</b></div>
-      <div><span>tokens · total do repo</span><b>${fmtTok(tokRepo)}</b></div>
+      <div><span>last activity</span><b title="${esc(bus?.last_active || '')}">${bus?.last_active ? relTime(bus.last_active) : '—'}</b></div>
+      <div><span>last worked on</span><b title="${esc(bus?.last_task || '')}">${lastTitle ? esc(truncWord(lastTitle, 28)) : '—'}</b></div>
+      <div><span>tokens · selected task</span><b>${task ? fmtTok(tokTask) : '—'}</b></div>
+      <div><span>tokens · repo total</span><b>${fmtTok(tokRepo)}</b></div>
     </div>
-    <h3>Tasks em que atuou</h3>${actedHtml}
+    <h3>Tasks worked on</h3>${actedHtml}
     <h3>Timeline${task ? ` · ${esc(truncWord(task.title, 28))}` : ''}</h3>${msgsHtml}
     <h3>Logs${task ? ` · ${esc(truncWord(task.title, 28))}` : ''}</h3>${logsHtml}`;
   el.classList.add('open');
@@ -722,7 +728,7 @@ function renderSheet() {
   });
 }
 
-// --- painel Logs: filtro por nível (persistido) e por origem ---
+// --- Logs panel: filter by level (persisted) and by source ---
 function renderLogs(task) {
   const logs = task.logs || [];
   const level = (l) => (LOG_LEVELS.includes(l.level) ? l.level : 'info');
@@ -734,7 +740,7 @@ function renderLogs(task) {
     (lv) =>
       `<button class="chip lv-${lv}${logFilter.levels.includes(lv) ? ' on' : ''}" data-level="${lv}">${lv}${counts[lv] ? ` ${counts[lv]}` : ''}</button>`
   ).join('');
-  const select = `<select id="log-source"><option value="">todas as origens</option>${sources
+  const select = `<select id="log-source"><option value="">all sources</option>${sources
     .map((s) => `<option value="${esc(s)}"${s === logFilter.source ? ' selected' : ''}>${esc(s)}</option>`)
     .join('')}</select>`;
   const shown = logs.filter((l) => logFilter.levels.includes(level(l)) && (!logFilter.source || l.source === logFilter.source));
@@ -746,8 +752,8 @@ function renderLogs(task) {
     .join('');
   const table = shown.length
     ? `<table class="log-table"><tbody>${rows}</tbody></table>`
-    : `<div class="panel-empty">${logs.length ? 'nada passa no filtro atual' : 'sem logs ainda'}</div>`;
-  const title = `<span class="log-count">${shown.length}/${logs.length} linhas${counts.warn ? ` · <b class="w">⚠${counts.warn}</b>` : ''}${counts.error ? ` · <b class="e">✕${counts.error}</b>` : ''}</span>`;
+    : `<div class="panel-empty">${logs.length ? 'nothing matches the current filter' : 'no logs yet'}</div>`;
+  const title = `<span class="log-count">${shown.length}/${logs.length} lines${counts.warn ? ` · <b class="w">⚠${counts.warn}</b>` : ''}${counts.error ? ` · <b class="e">✕${counts.error}</b>` : ''}</span>`;
   return `<div class="panel-wrap"><div class="log-controls">${chips}${select}${title}</div>${table}</div>`;
 }
 
@@ -768,11 +774,11 @@ function wireLogs(content) {
     };
 }
 
-// --- painel Custos: tokens in/out/total por agente + total da task ---
+// --- Costs panel: tokens in/out/total per agent + task total ---
 function renderCustos(task) {
   const by = tokensByAgent(task.costs);
   const names = Object.keys(by).sort((a, b) => by[b].total - by[a].total);
-  if (!names.length) return '<div class="panel-empty">sem custos registrados ainda</div>';
+  if (!names.length) return '<div class="panel-empty">no costs recorded yet</div>';
   const rows = names
     .map(
       (n) => `<tr><td>${esc(n)}</td><td class="num">${fmtTok(by[n].in)}</td>
@@ -782,20 +788,20 @@ function renderCustos(task) {
   const t = task.tokens || { in: 0, out: 0, total: 0 };
   const usd = fmtUsd(task.usd);
   return `<div class="panel-wrap"><table class="cost-table">
-    <thead><tr><th>Agente</th><th class="num">in</th><th class="num">out</th><th class="num">total</th></tr></thead>
-    <tbody>${rows}<tr class="total"><td>Total da task</td><td class="num">${fmtTok(t.in)}</td>
+    <thead><tr><th>Agent</th><th class="num">in</th><th class="num">out</th><th class="num">total</th></tr></thead>
+    <tbody>${rows}<tr class="total"><td>Task total</td><td class="num">${fmtTok(t.in)}</td>
       <td class="num">${fmtTok(t.out)}</td><td class="num">${fmtTok(t.total)}</td></tr></tbody></table>
-    ${usd ? `<p class="muted">≈ ${usd} estimado pela tabela de preços</p>` : ''}</div>`;
+    ${usd ? `<p class="muted">≈ ${usd} estimated from the price table</p>` : ''}</div>`;
 }
 
-// --- painel Diff: commits que a task produziu no workspace do repo ---
-// Os commits vêm prontos do server (registro explícito + fallback pela janela da task).
-// Expansões vivem por HASH (não por índice) para sobreviverem ao re-render do SSE.
-const diffOpen = new Set(); // hashes com o diff aberto
-const diffFileClosed = new Set(); // `${hash} ${arquivo}` — arquivos abrem por padrão
-const diffAutoTasks = new Set(); // tasks cujo commit mais recente já foi auto-aberto
+// --- Diff panel: commits the task produced in the repo's workspace ---
+// Commits come pre-resolved from the server (explicit record + fallback via the task's window).
+// Expansions live by HASH (not by index) so they survive SSE re-renders.
+const diffOpen = new Set(); // hashes with the diff open
+const diffFileClosed = new Set(); // `${hash} ${file}` — files open by default
+const diffAutoTasks = new Set(); // tasks whose most recent commit has already been auto-opened
 
-// quebra o diff unificado em arquivos: cada bloco começa em "diff --git a/x b/x"
+// splits the unified diff into files: each block starts at "diff --git a/x b/x"
 function splitDiffFiles(diff) {
   const files = [];
   let cur = null;
@@ -807,7 +813,7 @@ function splitDiffFiles(diff) {
       continue;
     }
     if (!cur) {
-      // preâmbulo sem cabeçalho de arquivo (raro) — vira um bloco sem nome
+      // preamble with no file header (rare) — becomes an unnamed block
       if (!line.trim()) continue;
       cur = { path: '', lines: [], add: 0, del: 0 };
       files.push(cur);
@@ -828,7 +834,7 @@ function diffLineClass(l) {
   return 'dl-ctx';
 }
 
-// resumo do rodapé do --stat: "4 files changed, 96 insertions(+), 4 deletions(-)"
+// summary of the --stat footer: "4 files changed, 96 insertions(+), 4 deletions(-)"
 function statSummary(stat) {
   const last = String(stat || '').trim().split('\n').pop() || '';
   const f = /(\d+)\s+files?\s+changed/.exec(last);
@@ -836,7 +842,7 @@ function statSummary(stat) {
   const ins = /(\d+)\s+insertions?/.exec(last);
   const del = /(\d+)\s+deletions?/.exec(last);
   return (
-    `${f[1]} arquivo${f[1] === '1' ? '' : 's'}` +
+    `${f[1]} file${f[1] === '1' ? '' : 's'}` +
     (ins ? ` <b class="d-add">+${ins[1]}</b>` : '') +
     (del ? ` <b class="d-del">−${del[1]}</b>` : '')
   );
@@ -844,22 +850,22 @@ function statSummary(stat) {
 
 function renderDiffBody(c) {
   const files = splitDiffFiles(c.diff);
-  if (!files.length) return '<div class="diff-empty">sem alterações de arquivo neste commit</div>';
+  if (!files.length) return '<div class="diff-empty">no file changes in this commit</div>';
   const blocks = files.map((f) => {
     const key = `${c.hash} ${f.path}`;
     const open = !diffFileClosed.has(key);
     const body = open
-      // spans são display:block — sem "\n" entre eles (dentro de <pre> viraria linha vazia)
+      // spans are display:block — no "\n" between them (inside a <pre> it would become an empty line)
       ? `<pre class="diff-lines">${f.lines.map((l) => `<span class="${diffLineClass(l)}">${esc(l) || ' '}</span>`).join('')}</pre>`
       : '';
     return `<div class="diff-file${open ? ' open' : ''}">
       <button class="diff-file-head" data-file="${esc(key)}" title="${esc(f.path)}">
-        <span class="caret">${open ? '▾' : '▸'}</span><code>${esc(f.path || '(sem arquivo)')}</code>
+        <span class="caret">${open ? '▾' : '▸'}</span><code>${esc(f.path || '(no file)')}</code>
         <span class="d-counts">${f.add ? `<b class="d-add">+${f.add}</b>` : ''}${f.del ? `<b class="d-del">−${f.del}</b>` : ''}</span>
       </button>${body}</div>`;
   });
   const trunc = c.truncated
-    ? `<div class="diff-trunc">diff truncado — primeiras ${String(c.diff || '').split('\n').length} de ${c.totalLines} linhas</div>`
+    ? `<div class="diff-trunc">diff truncated — first ${String(c.diff || '').split('\n').length} of ${c.totalLines} lines</div>`
     : '';
   const stat = c.stat ? `<pre class="diff-stat">${esc(c.stat)}</pre>` : '';
   return stat + blocks.join('') + trunc;
@@ -868,11 +874,11 @@ function renderDiffBody(c) {
 function renderDiff(task) {
   const commits = task.commits || [];
   if (!commits.length)
-    return '<div class="panel-empty">sem commits no workspace nesta task — o diff aparece aqui assim que houver</div>';
+    return '<div class="panel-empty">no commits in the workspace for this task — the diff shows up here as soon as there is one</div>';
   const key = `${state.repo}/${task.slug}`;
   if (!diffAutoTasks.has(key)) {
     diffAutoTasks.add(key);
-    diffOpen.add(commits[0].hash); // primeira visita: o mais recente já vem aberto
+    diffOpen.add(commits[0].hash); // first visit: the most recent one starts open
   }
   const items = commits.map((c) => {
     const open = diffOpen.has(c.hash);
@@ -888,7 +894,7 @@ function renderDiff(task) {
       ${open ? `<div class="commit-body">${renderDiffBody(c)}</div>` : ''}</div>`;
   });
   return `<div class="panel-wrap diffs">
-    <div class="diff-count">${commits.length} commit${commits.length === 1 ? '' : 's'} no workspace</div>
+    <div class="diff-count">${commits.length} commit${commits.length === 1 ? '' : 's'} in the workspace</div>
     ${items.join('')}</div>`;
 }
 
@@ -911,19 +917,19 @@ function wireDiff(content) {
   });
 }
 
-// --- painel Linha do tempo: eixo único mesclando as origens da task ---
-// bus (mensagens), logs (padrão: só warn/error), commits do workspace, linhas do
-// journal com hora reconhecível e transições de nós da DAG (mensagens from="dag").
+// --- Timeline panel: single axis merging the task's sources ---
+// bus (messages), logs (default: only warn/error), workspace commits, journal
+// lines with a recognizable time, and DAG node transitions (messages with from="dag").
 const TL_ICON = { bus: '●', dag: '▣', log: '◦', commit: '⎇', journal: '✎' };
-const TL_ORIGEM = { bus: 'mensagem', dag: 'DAG', log: 'log', commit: 'commit', journal: 'journal' };
-const TL_GAP = 5 * MIN; // acima disso, separador com o buraco de tempo
+const TL_ORIGEM = { bus: 'message', dag: 'DAG', log: 'log', commit: 'commit', journal: 'journal' };
+const TL_GAP = 5 * MIN; // above this, a separator shows the time gap
 
-// linhas do journal com hora: "- 16:03 — texto" ou "**16:03** — texto".
-// Sem hora reconhecível, a linha é ignorada (o journal não é um log).
+// journal lines with a time: "- 16:03 — text" or "**16:03** — text".
+// With no recognizable time, the line is ignored (the journal isn't a log).
 function journalItems(task, refMs) {
   const file = (task.files || []).find((f) => /journal/i.test(f.name));
   if (!file || refMs == null) return [];
-  const base = new Date(refMs); // dia local do primeiro evento da task
+  const base = new Date(refMs); // local day of the task's first event
   const out = [];
   for (const line of String(file.content || '').split('\n')) {
     const m = /^\s*(?:[-*]\s*)?\**(\d{1,2}):(\d{2})\**\s*[—–:-]?\s*(.+)$/.exec(line);
@@ -933,13 +939,13 @@ function journalItems(task, refMs) {
     const texto = m[3].replace(/^\*\*|\*\*$/g, '').trim();
     if (h > 23 || mi > 59 || !texto) continue;
     let at = new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, mi).getTime();
-    if (at < refMs - 12 * 3600e3) at += 86400e3; // entrada depois da virada do dia
+    if (at < refMs - 12 * 3600e3) at += 86400e3; // entry after the day rolled over
     out.push({ at, origin: 'journal', text: texto });
   }
   return out;
 }
 
-// todos os eventos da task num eixo só, em ordem cronológica
+// all of the task's events on a single axis, in chronological order
 function timelineItems(task) {
   const items = [];
   for (const m of task.messages || []) {
@@ -984,11 +990,11 @@ function renderTimeline(task) {
   const items = timelineItems(task);
   const logs = (task.logs || []).length;
   const controls = `<div class="tl-controls">
-    <button class="chip${tlFilter.allLevels ? ' on' : ''}" id="tl-levels" title="por padrão a linha do tempo só traz logs warn/error">todos os níveis${logs ? ` (${logs} logs)` : ''}</button>
-    <span class="log-count">${items.length} evento${items.length === 1 ? '' : 's'}</span></div>`;
+    <button class="chip${tlFilter.allLevels ? ' on' : ''}" id="tl-levels" title="by default the timeline only carries warn/error logs">all levels${logs ? ` (${logs} logs)` : ''}</button>
+    <span class="log-count">${items.length} event${items.length === 1 ? '' : 's'}</span></div>`;
   if (!items.length)
-    return `<div class="panel-wrap">${controls}<div class="panel-empty">sem eventos ainda — mensagens, logs, commits, journal e transições da DAG aparecem aqui em ordem</div></div>`;
-  // agrupamento por proximidade: buraco maior que 5 min vira separador "+Nmin"
+    return `<div class="panel-wrap">${controls}<div class="panel-empty">no events yet — messages, logs, commits, journal and DAG transitions show up here in order</div></div>`;
+  // grouping by proximity: a gap larger than 5 min becomes a "+Nmin" separator
   const groups = [];
   let cur = null;
   for (const it of items) {
@@ -1024,17 +1030,19 @@ function wireTimeline(content) {
     };
 }
 
-// --- painel DAG: grafo mermaid + tabela de nós derivados de dag.json ---
+// --- DAG panel: mermaid graph + node table derived from dag.json ---
 const DAG_STATUS = {
-  todo: { label: 'todo', cls: 'dag-todo', mm: 'dagtodo' },
-  executando: { label: 'executando', cls: 'dag-exec', mm: 'dagexec' },
-  concluida: { label: 'concluída', cls: 'dag-done', mm: 'dagdone' },
-  bloqueada: { label: 'bloqueada', cls: 'dag-block', mm: 'dagblock' },
+  todo: { label: 'to do', cls: 'dag-todo', mm: 'dagtodo' },
+  executando: { label: 'running', cls: 'dag-exec', mm: 'dagexec' },
+  concluida: { label: 'done', cls: 'dag-done', mm: 'dagdone' },
+  bloqueada: { label: 'blocked', cls: 'dag-block', mm: 'dagblock' },
 };
 const dagSt = (s) => DAG_STATUS[s] || DAG_STATUS.todo;
 const GR_STATUS = ['pendente', 'pass', 'falha', 'aceito'];
 const grSt = (s) => (GR_STATUS.includes(s) ? s : 'pendente');
 const GR_ICON = { pass: '✓', falha: '✕', aceito: '~', pendente: '◦' };
+// display label for the raw guardrail status value (the gr-<status> CSS class stays untranslated)
+const GR_LABEL = { pendente: 'pending', pass: 'pass', falha: 'failed', aceito: 'accepted' };
 
 function dagGrCounts(nodes) {
   const c = { pass: 0, falha: 0, aceito: 0, pendente: 0 };
@@ -1042,7 +1050,7 @@ function dagGrCounts(nodes) {
   return c;
 }
 
-// resumo da DAG: progresso de nós + guardrails; alert = falha não-aceita aberta
+// DAG summary: node progress + guardrails; alert = an open, unaccepted failure
 function dagStats(dag) {
   const nodes = dag?.nodes || [];
   const done = nodes.filter((n) => n.status === 'concluida').length;
@@ -1051,7 +1059,7 @@ function dagStats(dag) {
   return { total: nodes.length, done, running, gr, alert: gr.falha > 0 };
 }
 
-// ordem topológica (DFS pelas dependências); tolera ciclos e deps desconhecidas
+// topological order (DFS over dependencies); tolerates cycles and unknown deps
 function dagTopo(nodes) {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const seen = new Set();
@@ -1068,12 +1076,12 @@ function dagTopo(nodes) {
   return out;
 }
 
-// escapa o texto de um label mermaid (aspas e caracteres com significado)
+// escapes the text of a mermaid label (quotes and characters with special meaning)
 const mmEsc = (s) =>
   String(s ?? '').replace(/[#"<>\[\]{}|]/g, (c) => ({ '#': '#35;', '"': '#quot;', '<': '#lt;', '>': '#gt;', '[': '#91;', ']': '#93;', '{': '#123;', '}': '#125;', '|': '#124;' }[c]));
 
-// gera o texto flowchart TD a partir dos nós (ids sintéticos d0..dN — ids do
-// JSON podem conter caracteres inválidos para o mermaid)
+// generates the flowchart TD text from the nodes (synthetic ids d0..dN — the
+// JSON's ids may contain characters invalid for mermaid)
 function dagMermaid(nodes) {
   const idOf = new Map(nodes.map((n, i) => [n.id, `d${i}`]));
   const lines = ['flowchart TD'];
@@ -1092,25 +1100,25 @@ function dagMermaid(nodes) {
   return lines.join('\n');
 }
 
-// guardrail expandido na tabela: título/severidade vêm do pool (fallback: só o id)
+// guardrail expanded in the table: title/severity come from the pool (fallback: just the id)
 function renderGuardrail(g, poolBy) {
   const p = poolBy.get(g.id);
   const s = grSt(g.status);
-  const tip = [p?.verificacao, g.nota && s !== 'aceito' ? `nota: ${g.nota}` : ''].filter(Boolean).join(' — ');
+  const tip = [p?.verificacao, g.nota && s !== 'aceito' ? `note: ${g.nota}` : ''].filter(Boolean).join(' — ');
   const sev = p?.severidade ? ` <span class="gr-sev">${esc(p.severidade)}</span>` : '';
   const nota = s === 'aceito' && g.nota ? `<div class="gr-nota">${esc(g.nota)}</div>` : '';
-  return `<div class="gr-line" title="${esc(tip)}"><span class="gr-badge gr-${s}">${GR_ICON[s]} ${esc(s)}</span> ${esc(p?.titulo || g.id)}${sev}${nota}</div>`;
+  return `<div class="gr-line" title="${esc(tip)}"><span class="gr-badge gr-${s}">${GR_ICON[s]} ${esc(GR_LABEL[s] || s)}</span> ${esc(p?.titulo || g.id)}${sev}${nota}</div>`;
 }
 
 function renderDag(task) {
   const nodes = task.dag?.nodes || [];
-  if (!nodes.length) return '<div class="panel-empty">sem DAG — gerada na fase de plano</div>';
+  if (!nodes.length) return '<div class="panel-empty">no DAG — generated during the plan phase</div>';
   const s = dagStats(task.dag);
   const poolBy = new Map((state.pool || []).map((g) => [g.id, g]));
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const grTotal = s.gr.pass + s.gr.falha + s.gr.aceito + s.gr.pendente;
   const summary = `<div class="dag-summary">
-    <span class="dag-prog${s.done === s.total ? ' ok' : ''}">${s.done}/${s.total} nós concluídos</span>
+    <span class="dag-prog${s.done === s.total ? ' ok' : ''}">${s.done}/${s.total} nodes completed</span>
     ${grTotal ? `<span class="dag-gr">guardrails:
       <b class="gr-pass">✓${s.gr.pass}</b>
       ${s.gr.falha ? `<b class="gr-falha">✕${s.gr.falha}</b>` : ''}
@@ -1128,27 +1136,27 @@ function renderDag(task) {
         <td>${esc(n.agente || '—')}</td><td class="dag-deps">${deps}</td><td>${grs}</td></tr>`;
     })
     .join('');
-  const table = `<table class="dag-table"><thead><tr><th>Nó</th><th>Status</th><th>Agente</th><th>Depende de</th><th>Guardrails</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const table = `<table class="dag-table"><thead><tr><th>Node</th><th>Status</th><th>Agent</th><th>Depends on</th><th>Guardrails</th></tr></thead><tbody>${rows}</tbody></table>`;
   return `<div class="panel-wrap dag">${summary}${graph}${table}</div>`;
 }
 
-// --- estado do mundo (modelo push: estado.json + acessos.json escritos pelos agentes) ---
-// Cada card mostra "atualizado há X" do seu atualizado_em — honestidade do push:
-// mais de 30 min sem update fica âmbar.
+// --- world state (push model: estado.json + acessos.json written by the agents) ---
+// Each card shows "updated X ago" from its atualizado_em — push honesty:
+// more than 30 min without an update turns amber.
 const STALE_MS = 30 * 60 * 1000;
 function ageBadge(ts) {
   if (!ts) return '';
   const d = new Date(ts);
   const stale = !isNaN(d) && Date.now() - d.getTime() > STALE_MS;
-  return `<span class="state-age${stale ? ' stale' : ''}" title="${esc(ts)}">atualizado ${relTime(ts)}</span>`;
+  return `<span class="state-age${stale ? ' stale' : ''}" title="${esc(ts)}">updated ${relTime(ts)}</span>`;
 }
 const stateCard = (title, ts, body) =>
   `<div class="state-card"><div class="state-head"><h3>${title}</h3>${ageBadge(ts)}</div>${body}</div>`;
-// dot de saúde do acesso: verde = respondeu ao ping; cinza = down ou nunca verificado
+// access health dot: green = responded to the ping; gray = down or never checked
 const accDot = (up) =>
-  `<span class="acc-dot${up ? ' up' : ''}" title="${up ? 'respondendo' : up === false ? 'sem resposta' : 'não verificado'}"></span>`;
+  `<span class="acc-dot${up ? ' up' : ''}" title="${up ? 'responding' : up === false ? 'no response' : 'not checked'}"></span>`;
 
-// comparação semver simples: extrai as sequências numéricas ("v1.38.1" → [1,38,1])
+// simple semver comparison: extracts the numeric sequences ("v1.38.1" → [1,38,1])
 function semverParts(s) {
   const m = String(s ?? '').match(/\d+(?:\.\d+)*/);
   return m ? m[0].split('.').map(Number) : null;
@@ -1171,13 +1179,13 @@ function renderAcessosCard(acessos) {
     .map(
       (a) => `<div class="acc">
         <div class="acc-line">${accDot(a.up)}<strong>${esc(a.nome || a.url || '?')}</strong>
-          <span class="acc-type">${esc(a.tipo || 'outro')}</span>
+          <span class="acc-type">${esc(accessTypeLabel(a.tipo || 'outro'))}</span>
           ${a.url ? `<a class="acc-url" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.url)}</a>` : ''}</div>
         ${a.nota ? `<div class="acc-note">${esc(a.nota)}</div>` : ''}
       </div>`
     )
     .join('');
-  return stateCard('Acessos', last, rows);
+  return stateCard('Access', last, rows);
 }
 
 function renderRuntimeCard(rt) {
@@ -1189,15 +1197,15 @@ function renderRuntimeCard(rt) {
           const cls = m ? (Number(m[1]) >= Number(m[2]) && Number(m[2]) > 0 ? 'ok' : 'partial') : '';
           const rs = Number(d.restarts) || 0;
           return `<div class="rt-row"><strong>${esc(d.nome || '?')}</strong>
-            <span class="rt-ready ${cls}" title="pods prontos">${esc(d.ready ?? '—')}</span>
+            <span class="rt-ready ${cls}" title="ready pods">${esc(d.ready ?? '—')}</span>
             <span class="rt-meta">${rs} restart${rs === 1 ? '' : 's'}</span>
-            ${d.idade ? `<span class="rt-meta" title="idade">${esc(d.idade)}</span>` : ''}</div>`;
+            ${d.idade ? `<span class="rt-meta" title="age">${esc(d.idade)}</span>` : ''}</div>`;
         })
         .join('')
-    : '<div class="state-empty">nada no ar</div>';
+    : '<div class="state-empty">nothing running</div>';
   const imgs =
     Array.isArray(rt.imagens) && rt.imagens.length
-      ? `<div class="rt-images" title="imagens">${rt.imagens.map((i) => esc(i)).join(' · ')}</div>`
+      ? `<div class="rt-images" title="images">${rt.imagens.map((i) => esc(i)).join(' · ')}</div>`
       : '';
   return stateCard('Runtime', rt.atualizado_em, rows + imgs);
 }
@@ -1209,11 +1217,11 @@ function renderAmbienteCard(amb) {
     .map((k) => {
       const min = minimos[k];
       const bad = min != null && belowMin(amb[k], min);
-      const minHtml = min != null ? `<span class="env-min${bad ? ' bad' : ''}" title="mínimo exigido">mín ${esc(min)}</span>` : '';
+      const minHtml = min != null ? `<span class="env-min${bad ? ' bad' : ''}" title="required minimum">min ${esc(min)}</span>` : '';
       return `<div class="env-row"><span class="env-k">${esc(k)}</span><span class="env-val${bad ? ' bad' : ''}">${esc(amb[k])}</span>${minHtml}</div>`;
     })
     .join('');
-  return stateCard('Ambiente', amb.atualizado_em, rows || '<div class="state-empty">sem dados</div>');
+  return stateCard('Environment', amb.atualizado_em, rows || '<div class="state-empty">no data</div>');
 }
 
 function renderOrigemCard(o) {
@@ -1222,9 +1230,9 @@ function renderOrigemCard(o) {
       ? `<a class="acc-url" href="${esc(o.upstream)}" target="_blank" rel="noopener">${esc(o.upstream)}</a>`
       : o.upstream
         ? `<span class="env-val">${esc(o.upstream)}</span>`
-        : '<span class="state-empty">repo local</span>';
-  const cl = o.clonado_em ? `<div class="rt-meta">clonado em ${esc(o.clonado_em)}</div>` : '';
-  return stateCard('Origem', o.atualizado_em, `<div class="env-row"><span class="env-k">upstream</span>${up}</div>${cl}`);
+        : '<span class="state-empty">local repo</span>';
+  const cl = o.clonado_em ? `<div class="rt-meta">cloned on ${esc(o.clonado_em)}</div>` : '';
+  return stateCard('Origin', o.atualizado_em, `<div class="env-row"><span class="env-k">upstream</span>${up}</div>${cl}`);
 }
 
 function renderStateGrid(repo) {
@@ -1237,19 +1245,19 @@ function renderStateGrid(repo) {
   return cards.length ? `<div class="state-grid">${cards.join('')}</div>` : '';
 }
 
-// linha-resumo do progresso do repo (agregado pelo server): tasks · nós de DAG · verificações
+// repo's progress summary line (aggregated by the server): tasks · DAG nodes · checks
 function renderProgressLine(repo) {
   const p = repo.progress;
   if (!p || !p.tasks?.total) return '';
   const segs = [`<b>${p.tasks.done}/${p.tasks.total}</b> tasks`];
-  if (p.dag?.total) segs.push(`DAG <b>${p.dag.done}/${p.dag.total}</b> nós`);
+  if (p.dag?.total) segs.push(`DAG <b>${p.dag.done}/${p.dag.total}</b> nodes`);
   const g = p.gr || {};
   if (g.pass + g.falha + g.aceito + g.pendente > 0) {
     segs.push(
-      `verificações <b class="gr-pass">${g.pass} pass</b>` +
-        (g.falha ? ` · <b class="gr-falha">${g.falha} falha${g.falha === 1 ? '' : 's'}</b>` : '') +
-        (g.aceito ? ` · <b class="gr-aceito">${g.aceito} aceito${g.aceito === 1 ? '' : 's'}</b>` : '') +
-        ` · <b class="gr-pendente">${g.pendente} pendente${g.pendente === 1 ? '' : 's'}</b>`
+      `checks <b class="gr-pass">${g.pass} pass</b>` +
+        (g.falha ? ` · <b class="gr-falha">${g.falha} failed</b>` : '') +
+        (g.aceito ? ` · <b class="gr-aceito">${g.aceito} accepted</b>` : '') +
+        ` · <b class="gr-pendente">${g.pendente} pending</b>`
     );
   }
   const tempo = repoTimeHtml(repo);
@@ -1257,27 +1265,27 @@ function renderProgressLine(repo) {
   return `<div class="progress-line">${segs.join('<span class="prog-sep">·</span>')}</div>`;
 }
 
-// Pendências: perguntas aguardando o humano + riscos aceitos nas reviews das tasks
+// Pending: questions awaiting the human + accepted risks from the tasks' reviews
 function renderPendencias(repo) {
   const waits = (repo.tasks || []).filter((t) => t.awaiting);
   const risks = (repo.tasks || []).flatMap((t) => (t.risks || []).map((r) => ({ t, r })));
   if (!waits.length && !risks.length) return '';
-  const parts = ['<h2>Pendências</h2>'];
+  const parts = ['<h2>Pending</h2>'];
   for (const t of waits) {
     const q = (t.awaitingMsgs || [])[0];
     const preview = q?.body ? ` <span class="pend-preview">— “${esc(truncWord(q.body, 90))}”</span>` : '';
     parts.push(
-      `<div class="pend pend-wait"><a data-sala="${esc(t.slug)}" title="abrir a Sala de ${esc(t.slug)}">✋ ${esc(t.title)}: ${t.awaiting} pergunta${t.awaiting === 1 ? '' : 's'} aguardando você</a>${preview}</div>`
+      `<div class="pend pend-wait"><a data-sala="${esc(t.slug)}" title="open ${esc(t.slug)}'s Room">✋ ${esc(t.title)}: ${t.awaiting} question${t.awaiting === 1 ? '' : 's'} awaiting you</a>${preview}</div>`
     );
   }
   for (const { t, r } of risks)
     parts.push(
-      `<div class="pend pend-risk"><span class="pend-tag">risco aceito</span><span class="pend-task" title="${esc(t.slug)}">${esc(t.title)}</span> — ${marked.parseInline(r)}</div>`
+      `<div class="pend pend-risk"><span class="pend-tag">accepted risk</span><span class="pend-task" title="${esc(t.slug)}">${esc(t.title)}</span> — ${marked.parseInline(r)}</div>`
     );
   return parts.join('');
 }
 
-// linha compacta de acessos na visão da task (junto do breadcrumb)
+// compact access line in the task view (next to the breadcrumb)
 function renderAccessChips(repo) {
   const acessos = repo?.acessos || [];
   if (!acessos.length) return '';
@@ -1300,18 +1308,18 @@ function renderRepoOverview(repo) {
   if (repo.git) {
     meta.push(
       `<span class="badge git" title="workspace: ${esc(repo.workspace)}">⎇ ${esc(repo.git.branch)}</span>` +
-        (repo.git.lastCommit ? `<span class="git-commit" title="último commit">${esc(repo.git.lastCommit)}</span>` : '')
+        (repo.git.lastCommit ? `<span class="git-commit" title="last commit">${esc(repo.git.lastCommit)}</span>` : '')
     );
   }
   if (repo.tokens?.total) {
     meta.push(
-      `<span class="badge" title="tokens do repo (in ${fmtTok(repo.tokens.in)} / out ${fmtTok(repo.tokens.out)})">Σ ${fmtTok(repo.tokens.total)} tok${repo.usd != null ? ` · ~${fmtUsd(repo.usd)}` : ''}</span>`
+      `<span class="badge" title="repo's tokens (in ${fmtTok(repo.tokens.in)} / out ${fmtTok(repo.tokens.out)})">Σ ${fmtTok(repo.tokens.total)} tok${repo.usd != null ? ` · ~${fmtUsd(repo.usd)}` : ''}</span>`
     );
   }
   if (meta.length) parts.push(`<div class="repo-meta">${meta.join(' ')}</div>`);
 
   parts.push(renderProgressLine(repo));
-  parts.push(renderStateGrid(repo)); // estado do mundo (push): Acessos / Runtime / Ambiente / Origem
+  parts.push(renderStateGrid(repo)); // world state (push): Access / Runtime / Environment / Origin
 
   if (repo.tasks.length) {
     const anyTok = repo.tasks.some((t) => t.tokens?.total);
@@ -1326,13 +1334,13 @@ function renderRepoOverview(repo) {
             if (anyDag) {
               if (t.dag?.nodes?.length) {
                 const ds = dagStats(t.dag);
-                dag = `<td><span class="dag-badge ${ds.alert ? 'dag-block' : ds.done === ds.total ? 'dag-done' : 'dag-todo'}" title="${ds.alert ? 'guardrail em falha' : 'nós concluídos'}">${ds.done}/${ds.total}</span></td>`;
+                dag = `<td><span class="dag-badge ${ds.alert ? 'dag-block' : ds.done === ds.total ? 'dag-done' : 'dag-todo'}" title="${ds.alert ? 'guardrail failed' : 'completed nodes'}">${ds.done}/${ds.total}</span></td>`;
               } else dag = '<td class="muted">—</td>';
             }
-            // bloqueada por dependência: badge "aguarda <nn>" + linha esmaecida
+            // blocked by a dependency: "awaiting <nn>" badge + dimmed line
             const open = openDeps(t);
             const dep = t.blocked
-              ? ` <span class="dep-badge" title="aguarda: ${esc(open.map((d) => d.title).join(', '))}">🔒 aguarda ${esc(open.map((d) => depNum(d.slug)).join(', '))}</span>`
+              ? ` <span class="dep-badge" title="awaiting: ${esc(open.map((d) => d.title).join(', '))}">🔒 awaiting ${esc(open.map((d) => depNum(d.slug)).join(', '))}</span>`
               : '';
             return `<tr class="task-row${t.blocked ? ' blocked' : ''}" data-task="${esc(t.slug)}"><td class="num">${i + 1}</td>
               <td>${esc(t.title)}</td><td><span class="status ${s.cls}">${s.icon} ${s.label}</span>${dep}</td>${dag}${tok}</tr>`;
@@ -1341,23 +1349,23 @@ function renderRepoOverview(repo) {
         `</tbody></table>`
     );
   } else {
-    parts.push('<p class="muted">Nenhuma task ainda neste repo.</p>');
+    parts.push('<p class="muted">No tasks in this repo yet.</p>');
   }
 
-  parts.push(renderPendencias(repo)); // perguntas aguardando você + riscos aceitos das reviews
-  parts.push(renderRoster(repo)); // roster completo dos agentes do repo (cards → ficha)
+  parts.push(renderPendencias(repo)); // questions awaiting you + accepted risks from the reviews
+  parts.push(renderRoster(repo)); // full roster of the repo's agents (cards → sheet)
 
   if (repo.context) parts.push(`<hr class="sep" />${marked.parse(repo.context)}`);
-  else parts.push('<p class="muted">Sem 00-contexto.md ainda.</p>');
+  else parts.push('<p class="muted">No 00-contexto.md yet.</p>');
 
   return `<div class="md wide">${parts.join('')}</div>`;
 }
 
-// breadcrumb discreto no topo do conteúdo: "repo › task" (repo clicável → visão geral);
-// extra = conteúdo alinhado à direita (linha compacta de acessos na visão da task)
+// discreet breadcrumb at the top of the content: "repo › task" (repo clickable → overview);
+// extra = right-aligned content (compact access line in the task view)
 function renderCrumb(repo, task, extra = '') {
   const t = task ? `<span class="crumb-sep">›</span><span>${esc(task.title)}</span>${taskTimerHtml(task)}` : '';
-  return `<div class="crumb"><a class="crumb-repo" title="visão geral do repo">${esc(repo.title)}</a>${t}${extra}</div>`;
+  return `<div class="crumb"><a class="crumb-repo" title="repo overview">${esc(repo.title)}</a>${t}${extra}</div>`;
 }
 
 function wireCrumb(content) {
@@ -1376,20 +1384,20 @@ async function renderContent() {
   const content = $('#content');
   const scrollPos = content.scrollTop;
   if (!state.repos.length) {
-    content.innerHTML = '<div class="empty"><p>nenhum repo — crie um com o piloto</p></div>';
+    content.innerHTML = '<div class="empty"><p>no repos — create one with the pilot</p></div>';
     return;
   }
   const repo = currentRepo();
   if (!repo) {
-    content.innerHTML = '<div class="empty"><p>selecione um repo ao lado</p></div>';
+    content.innerHTML = '<div class="empty"><p>select a repo on the side</p></div>';
     return;
   }
   const task = currentTask();
   if (!task) {
     content.innerHTML = renderCrumb(repo, null) + renderRepoOverview(repo);
     wireCrumb(content);
-    wireAgentClicks(content); // cards do roster → ficha
-    // clique numa linha da tabela de tasks → seleciona a task
+    wireAgentClicks(content); // roster cards → sheet
+    // click on a task-table row → selects the task
     content.querySelectorAll('.task-row').forEach((row) => {
       row.onclick = () => {
         state.task = row.dataset.task;
@@ -1399,7 +1407,7 @@ async function renderContent() {
         renderAll();
       };
     });
-    // pendência "aguardando você" → Sala da task de origem
+    // "awaiting you" pending item → the originating task's Room
     content.querySelectorAll('[data-sala]').forEach((a) => {
       a.onclick = () => {
         state.task = a.dataset.sala;
@@ -1413,7 +1421,7 @@ async function renderContent() {
     content.scrollTop = scrollPos;
     return;
   }
-  // topo comum de qualquer aba da task: breadcrumb (+ acessos do repo) + faixa de agentes + dependências
+  // common top of any task tab: breadcrumb (+ repo's access) + agent strip + dependencies
   const pre = renderCrumb(repo, task, renderAccessChips(repo)) + renderAgentStrip(repo, task) + renderDepsLine(task);
   const wireTop = () => {
     wireCrumb(content);
@@ -1429,7 +1437,7 @@ async function renderContent() {
   }
   if (state.tab === 'panel:dag') {
     content.innerHTML = pre + renderDag(task);
-    await renderMermaidIn(content); // o grafo derivado vira SVG aqui
+    await renderMermaidIn(content); // the derived graph becomes SVG here
   } else if (state.tab === 'panel:diff') {
     content.innerHTML = pre + renderDiff(task);
     wireDiff(content);
@@ -1442,7 +1450,7 @@ async function renderContent() {
   } else if (state.tab === 'panel:custos') {
     content.innerHTML = pre + renderCustos(task);
   } else if (!task.files.length) {
-    content.innerHTML = pre + '<div class="empty"><p>task ainda sem arquivos — o enunciado aparece aqui assim que existir</p></div>';
+    content.innerHTML = pre + '<div class="empty"><p>task with no files yet — the statement shows up here as soon as it exists</p></div>';
   } else {
     const file = task.files.find((f) => f.name === state.tab) || task.files[0];
     content.innerHTML = pre + `<div class="md">${marked.parse(file.content)}</div>`;
@@ -1452,10 +1460,10 @@ async function renderContent() {
   content.scrollTop = scrollPos;
 }
 
-// --- alerta fora da aba: título piscando + favicon âmbar enquanto houver pendência ---
-// Enquanto totals.awaiting > 0 o título alterna a cada 2s com "✋ aguardando você" e a
-// aba fica com um favicon âmbar (desenhado em canvas — nenhum arquivo novo).
-const ICON_ALERT = '✋ aguardando você';
+// --- off-tab alert: blinking title + amber favicon while there's something pending ---
+// While totals.awaiting > 0 the title alternates every 2s with "✋ awaiting you" and the
+// tab gets an amber favicon (drawn on canvas — no new file).
+const ICON_ALERT = '✋ awaiting you';
 let normalTitle = 'Workspace for Agents';
 let titleTimer = null;
 let titleFlipped = false;
@@ -1472,13 +1480,13 @@ function amberFavicon() {
   g.arc(32, 32, 31, 0, Math.PI * 2);
   g.fill();
   g.fillStyle = '#0f1115'; // --bg
-  g.fillRect(27, 13, 10, 26); // haste do "!"
-  g.fillRect(27, 44, 10, 10); // ponto
+  g.fillRect(27, 13, 10, 26); // stem of the "!"
+  g.fillRect(27, 44, 10, 10); // dot
   amberIcon = c.toDataURL('image/png');
   return amberIcon;
 }
 
-// troca o <link rel=icon> substituindo o nó (mudar só o href nem sempre repinta a aba)
+// swaps the <link rel=icon> by replacing the node (just changing the href doesn't always repaint the tab)
 function setFavicon(href) {
   document.querySelectorAll('link[rel="icon"]').forEach((l) => l.remove());
   const l = document.createElement('link');
@@ -1506,13 +1514,13 @@ function updateAwaitAlert(n) {
 function renderHeader() {
   const repo = currentRepo();
   normalTitle = repo ? `${repo.title} - Workspace for Agents` : 'Workspace for Agents';
-  if (!titleFlipped) document.title = normalTitle; // sem atropelar o pisca do alerta
-  // "aguardando você": perguntas/decisões ao humano sem resposta, em qualquer repo.
-  // Clique navega para a Sala da task de origem (prioridade: repo selecionado).
+  if (!titleFlipped) document.title = normalTitle; // don't override the alert's blink
+  // "awaiting you": unanswered questions/decisions to the human, in any repo.
+  // Click navigates to the originating task's Room (priority: the selected repo).
   const aw = $('#await-badge');
   const n = state.totals?.awaiting || 0;
-  aw.textContent = n ? `✋ ${n} aguardando você` : '';
-  aw.title = n ? 'abrir a Sala da task que aguarda sua resposta' : '';
+  aw.textContent = n ? `✋ ${n} awaiting you` : '';
+  aw.title = n ? "open the Room of the task awaiting your reply" : '';
   aw.onclick = !n
     ? null
     : () => {
@@ -1529,8 +1537,8 @@ function renderHeader() {
         renderAll();
       };
   updateAwaitAlert(n);
-  // total do projeto (todos os repos): tempo somado das tasks + tokens + USD estimado
-  // (USD só com tools/prices.json). O tempo das tasks vivas anda no tick de 30s.
+  // project total (all repos): summed task time + tokens + estimated USD
+  // (USD only with tools/prices.json). The live tasks' time ticks every 30s.
   const pc = $('#proj-cost');
   const tot = state.totals;
   const projMs = state.repos.reduce((a, r) => a + sumElapsed(r.tasks), 0);
@@ -1540,13 +1548,13 @@ function renderHeader() {
   if (tot?.tokens?.total && tot.usd != null) partes.push(`~${fmtUsd(tot.usd)}`);
   pc.textContent = partes.join(' · ');
   const dicas = [];
-  if (projMs) dicas.push(`tempo somado das tasks do projeto: ${fmtDur(projMs)}`);
+  if (projMs) dicas.push(`summed time across the project's tasks: ${fmtDur(projMs)}`);
   if (tot?.tokens?.total) dicas.push(`in ${fmtTok(tot.tokens.in)} / out ${fmtTok(tot.tokens.out)}`);
   pc.title = dicas.join(' · ');
 }
 
-// tick de 30s: só os pedaços de tempo, sem re-render (não mexe em seleção, aba,
-// scroll, rascunhos da Sala nem expansões do Diff)
+// 30s tick: only the time bits, no re-render (doesn't touch selection, tab,
+// scroll, Room drafts or Diff expansions)
 function refreshTimes() {
   renderHeader();
   const rt = document.querySelector('[data-repo-time]');
@@ -1561,7 +1569,7 @@ async function renderAll() {
   renderTasksCol();
   renderTabs();
   await renderContent();
-  renderSheet(); // ficha de agente aberta sobrevive ao re-render do SSE
+  renderSheet(); // an open agent sheet survives the SSE re-render
 }
 
 let loadSeq = 0;
@@ -1571,18 +1579,18 @@ async function load() {
   const seq = ++loadSeq;
   let data;
   if (STATIC) {
-    data = window.__DATA__ || { repos: [] }; // state do repo embutido pelo share.mjs
+    data = window.__DATA__ || { repos: [] }; // repo state embedded by share.mjs
   } else {
     try {
       data = await (await fetch('/api/state')).json();
     } catch {
-      // fetch falhou (server reiniciando/ocupado): sem retry o evento SSE que
-      // motivou este load se perde e o painel fica desatualizado até o próximo
+      // fetch failed (server restarting/busy): without a retry the SSE event that
+      // triggered this load is lost and the panel stays stale until the next one
       loadRetry = setTimeout(load, 1000);
       return;
     }
   }
-  if (seq !== loadSeq) return; // resposta atrasada de um load antigo — descarta
+  if (seq !== loadSeq) return; // delayed response from an old load — discard
   state.repos = data.repos || [];
   state.totals = data.totals || null;
   state.pool = Array.isArray(data.guardrailPool) ? data.guardrailPool : [];
@@ -1591,10 +1599,10 @@ async function load() {
   await renderAll();
 }
 
-// Vivo: SSE recarrega o estado a cada mudança de arquivo, sem perder a seleção.
-// Estático: a própria página é a fonte — HEAD + ETag a cada 5s; versão nova chega
-// como atualização SUAVE (baixa o html, extrai o state e re-renderiza no lugar,
-// preservando scroll/aba de quem assiste); reload de verdade só se o CÓDIGO mudou.
+// Live: SSE reloads the state on every file change, without losing the selection.
+// Static: the page itself is the source — HEAD + ETag every 5s; a new version arrives
+// as a SOFT update (downloads the html, extracts the state and re-renders in place,
+// preserving the viewer's scroll/tab); a real reload only if the CODE changed.
 function connect() {
   if (STATIC) {
     let lastTag = null;
@@ -1613,7 +1621,7 @@ function connect() {
         const hash = txt.match(/__APP_HASH__ = "([^"]+)"/)?.[1];
         const dataLine = txt.match(/window\.__DATA__ = (.+);/)?.[1];
         if (hash && window.__APP_HASH__ && hash !== window.__APP_HASH__) {
-          location.reload(); // código novo — precisa do reload de verdade
+          location.reload(); // new code — needs a real reload
           return;
         }
         if (dataLine) {
@@ -1632,9 +1640,9 @@ function connect() {
   const es = new EventSource('/api/events');
   es.onopen = () => {
     $('#live-dot').classList.remove('off');
-    // Re-sincroniza a CADA (re)conexão: broadcasts são efêmeros — uma mudança
-    // ocorrida enquanto a conexão estava caída/reconectando não se repete, e
-    // sem este load() o painel ficaria desatualizado até o próximo evento (F5).
+    // Re-syncs on EVERY (re)connection: broadcasts are ephemeral — a change that
+    // happened while the connection was down/reconnecting doesn't repeat, and
+    // without this load() the panel would stay stale until the next event (F5).
     load();
   };
   es.onmessage = () => load();
@@ -1645,7 +1653,7 @@ function connect() {
   };
 }
 
-// Esc fecha a ficha de agente aberta
+// Esc closes the open agent sheet
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && agentSheet) {
     agentSheet = null;
@@ -1653,19 +1661,19 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// Sala: se o usuário rola para cima, o auto-scroll solta; perto do fim, gruda de novo
+// Room: if the user scrolls up, auto-scroll releases; near the bottom, it sticks again
 $('#content').addEventListener('scroll', () => {
   if (state.tab !== 'panel:sala') return;
   const c = $('#content');
   salaStick = c.scrollTop + c.clientHeight >= c.scrollHeight - 40;
 });
 
-// Página compartilhada: um único repo — a coluna de repos não tem função, e a
-// primeira carga sempre abre na visão geral do repo (leitura começa do começo).
+// Shared page: a single repo — the repos column serves no purpose, and the
+// first load always opens on the repo overview (reading starts from the start).
 if (STATIC) $('#repos-col').style.display = 'none';
 else restoreSel();
 applyCollapse();
 wireToggles();
 load();
 connect();
-setInterval(refreshTimes, 30000); // cronômetros andam sem depender de evento novo
+setInterval(refreshTimes, 30000); // timers run without depending on a new event

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -11,16 +11,16 @@
   <header>
     <h1>Workspace for Agents</h1>
     <span id="await-badge" class="badge wait"></span>
-    <span id="proj-cost" class="badge" title="tokens do projeto"></span>
-    <span id="live-dot" title="conectado">●</span>
+    <span id="proj-cost" class="badge" title="project tokens"></span>
+    <span id="live-dot" title="connected">●</span>
   </header>
   <div id="layout">
     <aside id="repos-col" class="col">
-      <div class="col-head"><span class="col-title">Repos</span><button id="repos-toggle" class="col-toggle" title="recolher coluna">⟨</button></div>
+      <div class="col-head"><span class="col-title">Repos</span><button id="repos-toggle" class="col-toggle" title="collapse column">⟨</button></div>
       <div id="repos" class="col-body"></div>
     </aside>
     <aside id="tasks-col" class="col">
-      <div class="col-head"><span class="col-title">Tasks</span><button id="tasks-toggle" class="col-toggle" title="recolher coluna">⟨</button></div>
+      <div class="col-head"><span class="col-title">Tasks</span><button id="tasks-toggle" class="col-toggle" title="collapse column">⟨</button></div>
       <div id="tasks" class="col-body"></div>
     </aside>
     <section id="panel">
@@ -28,7 +28,7 @@
       <main id="content"></main>
     </section>
   </div>
-  <aside id="sheet" aria-label="ficha do agente"></aside>
+  <aside id="sheet" aria-label="agent sheet"></aside>
   <script src="/vendor/marked.min.js"></script>
   <script src="/vendor/mermaid.min.js"></script>
   <script src="/app.js"></script>
