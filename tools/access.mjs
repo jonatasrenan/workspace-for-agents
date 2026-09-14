@@ -1,19 +1,19 @@
-// Access entries (live URLs) for a repo — repos/<repo>/acessos.json.
+// Access entries (live URLs) for a repo — repos/<repo>/access.json.
 // PUSH model: whoever opens/exposes an access entry registers it here; the viewer only renders.
 // An ephemeral URL (port-forward, tunnel) ALWAYS comes with --note saying how to recreate it.
 // Usage:
-//   node tools/access.mjs add <repo> --name N --url U --type app|metricas|dashboard|outro [--note "..."]
-//     (upsert by nome: if it already exists, updates url/tipo/nota and registrado_em)
+//   node tools/access.mjs add <repo> --name N --url U --type app|metrics|dashboard|other [--note "..."]
+//     (upsert by name: if it already exists, updates url/type/note and registered_at)
 //   node tools/access.mjs remove <repo> --name N
 //   node tools/access.mjs list <repo>
-// Format: {"acessos":[{"nome","url","tipo","nota","registrado_em"}]}
+// Format: {"accesses":[{"name","url","type","note","registered_at"}]}
 import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJson, updateJson } from './jsonfile.mjs';
 import { stateRoot } from './root.mjs';
 
 const ROOT = stateRoot();
-const TIPOS = ['app', 'metricas', 'dashboard', 'outro'];
+const TYPES = ['app', 'metrics', 'dashboard', 'other'];
 
 function die(msg) {
   console.error(msg);
@@ -59,12 +59,12 @@ function touchMeta(repoDir) {
   });
 }
 
-function readAcessos(repoDir) {
-  const file = path.join(repoDir, 'acessos.json');
-  if (!fs.existsSync(file)) return { acessos: [] };
+function readAccess(repoDir) {
+  const file = path.join(repoDir, 'access.json');
+  if (!fs.existsSync(file)) return { accesses: [] };
   try {
     const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (!Array.isArray(data.acessos)) die(`${path.relative(ROOT, file)} missing "acessos" field (array)`);
+    if (!Array.isArray(data.accesses)) die(`${path.relative(ROOT, file)} missing "accesses" field (array)`);
     return data;
   } catch (e) {
     if (e instanceof SyntaxError) die(`${path.relative(ROOT, file)} is not valid JSON: ${e.message}`);
@@ -74,10 +74,10 @@ function readAcessos(repoDir) {
 
 // Read→modify→write under a lock: two agents registering access entries at the same time
 // can't overwrite each other's record nor leave the file half-written.
-function mutateAcessos(repoDir, fn) {
-  const file = path.join(repoDir, 'acessos.json');
-  updateJson(file, { acessos: [] }, (data) => {
-    if (!data || !Array.isArray(data.acessos)) die(`${path.relative(ROOT, file)} invalid: missing "acessos" field (array)`);
+function mutateAccess(repoDir, fn) {
+  const file = path.join(repoDir, 'access.json');
+  updateJson(file, { accesses: [] }, (data) => {
+    if (!data || !Array.isArray(data.accesses)) die(`${path.relative(ROOT, file)} invalid: missing "accesses" field (array)`);
     fn(data);
     return data;
   });
@@ -90,54 +90,54 @@ if (cmd === 'add') {
   const { flags, pos } = parseArgs(rest, ['name', 'url', 'type', 'note']);
   const [repoSlug] = pos;
   if (!repoSlug || !flags.name || !flags.url || !flags.type) {
-    die('usage: node tools/access.mjs add <repo> --name N --url U --type app|metricas|dashboard|outro [--note "..."]');
+    die('usage: node tools/access.mjs add <repo> --name N --url U --type app|metrics|dashboard|other [--note "..."]');
   }
-  if (!TIPOS.includes(flags.type)) die(`invalid tipo: "${flags.type}" — accepted: ${TIPOS.join(', ')}`);
+  if (!TYPES.includes(flags.type)) die(`invalid type: "${flags.type}" — accepted: ${TYPES.join(', ')}`);
   const repoDir = resolveRepo(repoSlug);
   let existente;
   const registro = {
-    nome: flags.name,
+    name: flags.name,
     url: flags.url,
-    tipo: flags.type,
-    nota: flags.note ?? '',
-    registrado_em: new Date().toISOString(),
+    type: flags.type,
+    note: flags.note ?? '',
+    registered_at: new Date().toISOString(),
   };
-  mutateAcessos(repoDir, (data) => {
-    existente = data.acessos.find((a) => a.nome === flags.name);
+  mutateAccess(repoDir, (data) => {
+    existente = data.accesses.find((a) => a.name === flags.name);
     if (existente) {
-      registro.nota = flags.note ?? existente.nota ?? '';
-      data.acessos[data.acessos.indexOf(existente)] = registro;
+      registro.note = flags.note ?? existente.note ?? '';
+      data.accesses[data.accesses.indexOf(existente)] = registro;
     } else {
-      data.acessos.push(registro);
+      data.accesses.push(registro);
     }
   });
-  console.log(`access ${existente ? 'updated' : 'registered'}: ${registro.nome} [${registro.tipo}] ${registro.url} in repos/${repoSlug}/acessos.json`);
+  console.log(`access ${existente ? 'updated' : 'registered'}: ${registro.name} [${registro.type}] ${registro.url} in repos/${repoSlug}/access.json`);
 } else if (cmd === 'remove') {
   const { flags, pos } = parseArgs(rest, ['name']);
   const [repoSlug] = pos;
   if (!repoSlug || !flags.name) die('usage: node tools/access.mjs remove <repo> --name N');
   const repoDir = resolveRepo(repoSlug);
-  mutateAcessos(repoDir, (data) => {
-    const idx = data.acessos.findIndex((a) => a.nome === flags.name);
+  mutateAccess(repoDir, (data) => {
+    const idx = data.accesses.findIndex((a) => a.name === flags.name);
     if (idx === -1) {
-      const nomes = data.acessos.map((a) => a.nome);
-      die(`access not found: "${flags.name}"${nomes.length ? ` — existing: ${nomes.join(', ')}` : ' — no access registered'}`);
+      const names = data.accesses.map((a) => a.name);
+      die(`access not found: "${flags.name}"${names.length ? ` — existing: ${names.join(', ')}` : ' — no access registered'}`);
     }
-    data.acessos.splice(idx, 1);
+    data.accesses.splice(idx, 1);
   });
-  console.log(`access removed: ${flags.name} from repos/${repoSlug}/acessos.json`);
+  console.log(`access removed: ${flags.name} from repos/${repoSlug}/access.json`);
 } else if (cmd === 'list') {
   const { pos } = parseArgs(rest, []);
   const [repoSlug] = pos;
   const repoDir = resolveRepo(repoSlug);
-  const { acessos } = readAcessos(repoDir);
-  if (!acessos.length) {
+  const { accesses } = readAccess(repoDir);
+  if (!accesses.length) {
     console.log(`(no access registered in repos/${repoSlug})`);
     process.exit(0);
   }
-  for (const a of acessos) {
-    const nota = a.nota ? `  — ${a.nota}` : '';
-    console.log(`${a.nome} [${a.tipo}]  ${a.url}  (registered ${a.registrado_em})${nota}`);
+  for (const a of accesses) {
+    const note = a.note ? `  — ${a.note}` : '';
+    console.log(`${a.name} [${a.type}]  ${a.url}  (registered ${a.registered_at})${note}`);
   }
 } else {
   die('usage: node tools/access.mjs <add|remove|list> <repo> [...]');

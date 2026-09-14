@@ -107,14 +107,14 @@ function isStub(name, content) {
 
 // question|decision messages addressed to the human, annotated with their
 // linked state (tools/questions.mjs — not a positional guess): each message
-// gets a `.pergunta` property when it's a question at all.
+// gets a `.question` property when it's a question at all.
 function annotateQuestions(messages) {
-  const estados = questionStates(messages);
+  const states = questionStates(messages);
   return messages.map((m, i) => {
-    const e = estados[i];
+    const e = states[i];
     if (!e) return m;
-    const closer = e.fechadaPorIndex != null ? messages[e.fechadaPorIndex] : null;
-    return { ...m, pergunta: { estado: e.estado, fechadaPor: closer ? { from: closer.from, body: closer.body, ts: closer.ts } : null } };
+    const closer = e.closedByIndex != null ? messages[e.closedByIndex] : null;
+    return { ...m, question: { state: e.state, closedBy: closer ? { from: closer.from, body: closer.body, ts: closer.ts } : null } };
   });
 }
 
@@ -181,7 +181,7 @@ function readTargetMin(dir, meta) {
   return null;
 }
 
-// --- access health ping (acessos.json) ---
+// --- access health ping (access.json) ---
 // In-memory cache with ~10s TTL, updated OUTSIDE the request cycle: /api/state
 // returns the last known result (up: true|false|null) and schedules the
 // background check when the cache is stale — the response never waits on
@@ -219,8 +219,8 @@ function schedulePing(url) {
 }
 
 // attaches up (from cache) to each access entry and schedules a refresh for stale ones
-function withPing(acessos) {
-  return acessos.map((a) => {
+function withPing(accesses) {
+  return accesses.map((a) => {
     const url = typeof a.url === 'string' && /^https?:\/\//i.test(a.url) ? a.url : null;
     let up = null;
     if (url) {
@@ -328,7 +328,7 @@ function gitInfo(wsDir) {
 //   (a) explicit record: repos/<repo>/tasks/<nn>/commits.jsonl (tools/commits.mjs);
 //   (b) temporal fallback: workspace commits whose date (committer date) falls in the
 //       task's window — backfills tasks that never registered anything.
-// Task window: [created, status concluida ? updated : now]. meta.created/updated
+// Task window: [created, status done ? updated : now]. meta.created/updated
 // have day granularity ("YYYY-MM-DD"): created opens at the START of the day and updated
 // closes at the END — otherwise a task created and completed on the same day would have a null window.
 // A task with no created does not participate in the fallback (only shows what it registered).
@@ -423,7 +423,7 @@ function attachCommits(tasks, wsDir) {
     // a completed task closes at the end of the updated day, but never after now — otherwise
     // a task completed today would have a WIDER window than its still-open sibling and steal
     // its commits under rule 2.
-    const fim = t.status === 'concluida' ? parseStamp(t.meta?.updated, true) : null;
+    const fim = t.status === 'done' ? parseStamp(t.meta?.updated, true) : null;
     const end = fim == null ? now : Math.min(fim, now);
     if (end < start) continue;
     windows.set(t.slug, { start, end });
@@ -511,7 +511,7 @@ function readTasks(repoDir, prices, wsDir) {
       const tokens = sumTokens(costs);
       const usd = estimateUsd(costs, prices);
       const awaitingMsgs = openQuestions(messages).map((m) => ({ id: m.id, from: m.from, kind: m.kind, body: m.body }));
-      const messagesComPerguntas = annotateQuestions(messages);
+      const messagesWithQuestions = annotateQuestions(messages);
       // task timing: real event window + target time from the statement. running =
       // task not yet completed with at least one event (the panel counts the elapsed time).
       const status = meta.status || 'todo';
@@ -520,7 +520,7 @@ function readTasks(repoDir, prices, wsDir) {
         start: first == null ? null : new Date(first).toISOString(),
         last: last == null ? null : new Date(last).toISOString(),
         targetMin: readTargetMin(dir, meta),
-        running: first != null && status !== 'concluida',
+        running: first != null && status !== 'done',
       };
       return {
         slug: name,
@@ -528,7 +528,7 @@ function readTasks(repoDir, prices, wsDir) {
         status,
         meta,
         files,
-        messages: messagesComPerguntas,
+        messages: messagesWithQuestions,
         logs,
         costs,
         agents,
@@ -562,7 +562,7 @@ function readTasks(repoDir, prices, wsDir) {
         ? { slug: dep.slug, title: dep.title, status: dep.status }
         : { slug: ref, title: ref, status: null, missing: true };
     });
-    t.blocked = t.depends_on.some((d) => !d.missing && d.status !== 'concluida');
+    t.blocked = t.depends_on.some((d) => !d.missing && d.status !== 'done');
   }
   attachCommits(tasks, wsDir); // Diff tab: registered + temporal fallback, attributed among tasks
   return tasks;
@@ -583,31 +583,31 @@ function readRepos() {
       // carry last_task = task it last worked on) — optional, absence becomes []
       const agentsJson = readJson(path.join(dir, 'agents.json'));
       const agents = Array.isArray(agentsJson?.agents) ? agentsJson.agents : [];
-      // estado.json / acessos.json (push model, written by agents) — optional,
+      // state.json / access.json (push model, written by agents) — optional,
       // missing/invalid becomes null / []. Each access gets up: true|false|null from the ping.
-      const estadoJson = readJson(path.join(dir, 'estado.json'));
-      const estado = estadoJson && typeof estadoJson === 'object' && !Array.isArray(estadoJson) ? estadoJson : null;
-      const acessosJson = readJson(path.join(dir, 'acessos.json'));
-      const acessos = withPing(
-        (Array.isArray(acessosJson?.acessos) ? acessosJson.acessos : []).filter(
+      const stateJson = readJson(path.join(dir, 'state.json'));
+      const state = stateJson && typeof stateJson === 'object' && !Array.isArray(stateJson) ? stateJson : null;
+      const accessJson = readJson(path.join(dir, 'access.json'));
+      const accesses = withPing(
+        (Array.isArray(accessJson?.accesses) ? accessJson.accesses : []).filter(
           (a) => a && typeof a === 'object' && !Array.isArray(a)
         )
       );
-      const counts = { todo: 0, 'em-andamento': 0, concluida: 0 };
+      const counts = { todo: 0, 'in-progress': 0, done: 0 };
       for (const t of tasks) if (t.status in counts) counts[t.status]++;
       // repo's aggregated progress: completed tasks, DAG nodes and checks (guardrails)
       const progress = {
-        tasks: { done: counts.concluida, total: tasks.length },
+        tasks: { done: counts.done, total: tasks.length },
         dag: { done: 0, total: 0 },
-        gr: { pass: 0, falha: 0, aceito: 0, pendente: 0 },
+        gr: { pass: 0, fail: 0, accepted: 0, pending: 0 },
       };
       for (const t of tasks) {
         for (const n of t.dag?.nodes || []) {
           progress.dag.total++;
-          if (n.status === 'concluida') progress.dag.done++;
+          if (n.status === 'done') progress.dag.done++;
           for (const g of n.guardrails || []) {
             if (!g || typeof g !== 'object') continue;
-            progress.gr[g.status in progress.gr ? g.status : 'pendente']++;
+            progress.gr[g.status in progress.gr ? g.status : 'pending']++;
           }
         }
       }
@@ -645,8 +645,8 @@ function readRepos() {
         git: gitInfo(wsDir),
         context: readIfExists(path.join(dir, '00-context.md')),
         agents,
-        estado,
-        acessos,
+        state,
+        accesses,
         progress,
         tasks,
         counts,
@@ -692,7 +692,7 @@ function handleBus(req, res) {
     const { repo, task, from, to, kind, body } = b || {};
     if (typeof repo !== 'string' || !repo || /[/\\]|\.\./.test(repo)) return json(res, 400, { error: 'invalid repo' });
     if (typeof task !== 'string' || !task || /[/\\]|\.\./.test(task)) return json(res, 400, { error: 'invalid task' });
-    if (from !== 'humano') return json(res, 400, { error: 'from must be "humano"' });
+    if (from !== 'human') return json(res, 400, { error: 'from must be "human"' });
     if (typeof to !== 'string' || !to) return json(res, 400, { error: 'to is required' });
     if (!MSG_KINDS.includes(kind)) return json(res, 400, { error: `kind must be one of: ${MSG_KINDS.join(', ')}` });
     if (typeof body !== 'string' || !body.trim()) return json(res, 400, { error: 'body is required' });
@@ -708,7 +708,7 @@ function handleBus(req, res) {
       return json(res, 400, { error: `"${b.meta.answers !== undefined ? 'answers' : 'dismisses'}" references a message that does not exist: "${ref}"` });
     }
     const ts = new Date().toISOString();
-    const msg = { id: newId(ts), ts, from: 'humano', to, kind, body };
+    const msg = { id: newId(ts), ts, from: 'human', to, kind, body };
     if (b.meta && typeof b.meta === 'object') msg.meta = b.meta;
     try {
       fs.appendFileSync(messagesFile, JSON.stringify(msg) + '\n');

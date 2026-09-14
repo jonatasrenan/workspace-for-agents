@@ -1,17 +1,17 @@
 // DAG of a task's subtasks, with guardrails attached from the pool (guardrails/pool.json).
-// A node can only be marked done once all its guardrails are resolved (pass or aceito) — the gate.
+// A node can only be marked done once all its guardrails are resolved (pass or accepted) — the gate.
 // Usage:
 //   node tools/dag.mjs set <repo> <task>                    (reads the full DAG JSON from stdin)
-//   node tools/dag.mjs node-status <repo> <task> <nodeId> <todo|executando|concluida|bloqueada> [--force]
-//   node tools/dag.mjs guardrail <repo> <task> <nodeId> <guardrailId> <pass|falha|pendente> [--note "..."]
-//   node tools/dag.mjs guardrail <repo> <task> <nodeId> <guardrailId> aceito --accept "reason"
+//   node tools/dag.mjs node-status <repo> <task> <nodeId> <todo|running|done|blocked> [--force]
+//   node tools/dag.mjs guardrail <repo> <task> <nodeId> <guardrailId> <pass|fail|pending> [--note "..."]
+//   node tools/dag.mjs guardrail <repo> <task> <nodeId> <guardrailId> accepted --accept "reason"
 //   node tools/dag.mjs show <repo> <task>
 //   node tools/dag.mjs pool [--tag <tag>] [--category <cat>]
 //   node tools/dag.mjs validate <repo> <task>
 // <task> accepts the full directory name OR just the numeric prefix ("01").
 // Format of dag.json (written to repos/<repo>/tasks/<task>/):
-//   {"nodes":[{"id","titulo","status","agente"?,"depends_on":["<id>"],"tags":["k8s"],
-//              "guardrails":[{"id":"<pool-id>","status":"pendente|pass|falha|aceito","nota"?}]}]}
+//   {"nodes":[{"id","title","status","agent"?,"depends_on":["<id>"],"tags":["k8s"],
+//              "guardrails":[{"id":"<pool-id>","status":"pending|pass|fail|accepted","note"?}]}]}
 import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJson, updateJson } from './jsonfile.mjs';
@@ -19,8 +19,8 @@ import { INSTALL_ROOT, stateRoot } from './root.mjs';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = stateRoot();
-const NODE_STATUS = ['todo', 'executando', 'concluida', 'bloqueada'];
-const GR_STATUS = ['pendente', 'pass', 'falha', 'aceito'];
+const NODE_STATUS = ['todo', 'running', 'done', 'blocked'];
+const GR_STATUS = ['pending', 'pass', 'fail', 'accepted'];
 
 function die(msg) {
   console.error(msg);
@@ -140,7 +140,7 @@ export function topoOrder(nodes) {
   return ordem;
 }
 
-// Validates the DAG against the pool. Normalizes defaults (guardrail status "pendente") in place.
+// Validates the DAG against the pool. Normalizes defaults (guardrail status "pending") in place.
 // Returns the list of ALL errors found (empty if ok).
 export function validateDag(dag, pool) {
   const erros = [];
@@ -158,10 +158,10 @@ export function validateDag(dag, pool) {
     if (typeof n.id !== 'string' || !n.id) erros.push(`${ref}: "id" missing or empty`);
     else if (vistos.has(n.id)) erros.push(`${ref}: duplicate id`);
     else vistos.add(n.id);
-    if (typeof n.titulo !== 'string' || !n.titulo) erros.push(`${ref}: "titulo" missing or empty`);
+    if (typeof n.title !== 'string' || !n.title) erros.push(`${ref}: "title" missing or empty`);
     if (n.status === undefined) n.status = 'todo';
     if (!NODE_STATUS.includes(n.status)) erros.push(`${ref}: invalid status "${n.status}" — accepted: ${NODE_STATUS.join(', ')}`);
-    if (n.agente !== undefined && typeof n.agente !== 'string') erros.push(`${ref}: "agente" must be a string`);
+    if (n.agent !== undefined && typeof n.agent !== 'string') erros.push(`${ref}: "agent" must be a string`);
     if (n.depends_on === undefined) n.depends_on = [];
     if (!Array.isArray(n.depends_on)) erros.push(`${ref}: "depends_on" must be a list of ids`);
     if (n.tags === undefined) n.tags = [];
@@ -177,7 +177,7 @@ export function validateDag(dag, pool) {
         continue;
       }
       if (!poolIds.has(g.id)) erros.push(`${ref}: guardrail "${g.id}" does not exist in the pool (see: node tools/dag.mjs pool)`);
-      if (g.status === undefined) g.status = 'pendente';
+      if (g.status === undefined) g.status = 'pending';
       if (!GR_STATUS.includes(g.status)) erros.push(`${ref}: guardrail "${g.id}" has invalid status "${g.status}" — accepted: ${GR_STATUS.join(', ')}`);
     }
   }
@@ -202,7 +202,7 @@ function findNode(dag, nodeId) {
 }
 
 function grCounts(nodes) {
-  const c = { pass: 0, falha: 0, pendente: 0, aceito: 0 };
+  const c = { pass: 0, fail: 0, pending: 0, accepted: 0 };
   for (const n of nodes) for (const g of n.guardrails ?? []) c[g.status] = (c[g.status] ?? 0) + 1;
   return c;
 }
@@ -233,36 +233,36 @@ if (cmd === 'set') {
   const anterior = fs.existsSync(path.join(taskDir, 'dag.json')) ? readJson(path.join(taskDir, 'dag.json'), null) : null;
   if (anterior?.nodes?.length) {
     const c = grCounts(anterior.nodes);
-    const concluidos = anterior.nodes.filter((n) => n.status === 'concluida').length;
-    const resolvidos = c.pass + c.falha + c.aceito;
-    if (concluidos || resolvidos) {
-      console.error(`warning: the previous DAG had ${concluidos} node(s) done and ${resolvidos} guardrail(s) with a verdict — status and verdicts were replaced by the submitted JSON.`);
+    const done = anterior.nodes.filter((n) => n.status === 'done').length;
+    const resolved = c.pass + c.fail + c.accepted;
+    if (done || resolved) {
+      console.error(`warning: the previous DAG had ${done} node(s) done and ${resolved} guardrail(s) with a verdict — status and verdicts were replaced by the submitted JSON.`);
     }
   }
   saveDag(taskDir, dag);
   const c = grCounts(dag.nodes);
-  console.log(`DAG written: ${dag.nodes.length} nodes, ${c.pass + c.falha + c.pendente + c.aceito} guardrails in repos/${repoSlug}/tasks/${taskName}/dag.json`);
+  console.log(`DAG written: ${dag.nodes.length} nodes, ${c.pass + c.fail + c.pending + c.accepted} guardrails in repos/${repoSlug}/tasks/${taskName}/dag.json`);
 } else if (cmd === 'node-status') {
   const { flags, pos } = parseArgs(rest, [], ['force']);
   const [repoSlug, taskArg, nodeId, status] = pos;
-  if (!nodeId || !status) die('usage: node tools/dag.mjs node-status <repo> <task> <nodeId> <todo|executando|concluida|bloqueada> [--force]');
+  if (!nodeId || !status) die('usage: node tools/dag.mjs node-status <repo> <task> <nodeId> <todo|running|done|blocked> [--force]');
   if (!NODE_STATUS.includes(status)) die(`invalid status: "${status}" — accepted: ${NODE_STATUS.join(', ')}`);
   const { taskDir, taskName } = resolveTask(repoSlug, taskArg);
   mutateDag(taskDir, taskName, repoSlug, (dag) => {
   const node = findNode(dag, nodeId);
-  if (status === 'executando' || status === 'concluida') {
-    const pendentes = (node.depends_on ?? []).filter((d) => dag.nodes.find((n) => n.id === d)?.status !== 'concluida');
-    if (pendentes.length && !flags.force) {
-      die(`refused: unfinished dependencies of "${nodeId}": ${pendentes.join(', ')} — finish them first or use --force for a deliberate exception`);
+  if (status === 'running' || status === 'done') {
+    const unfinished = (node.depends_on ?? []).filter((d) => dag.nodes.find((n) => n.id === d)?.status !== 'done');
+    if (unfinished.length && !flags.force) {
+      die(`refused: unfinished dependencies of "${nodeId}": ${unfinished.join(', ')} — finish them first or use --force for a deliberate exception`);
     }
   }
-  if (status === 'concluida') {
-    const abertos = (node.guardrails ?? []).filter((g) => g.status === 'pendente' || g.status === 'falha');
+  if (status === 'done') {
+    const abertos = (node.guardrails ?? []).filter((g) => g.status === 'pending' || g.status === 'fail');
     if (abertos.length) {
       die(
         `refused: node "${nodeId}" has ${abertos.length} unresolved guardrail(s):\n` +
           abertos.map((g) => `  - ${g.id} [${g.status}]`).join('\n') +
-          `\nresolve with: node tools/dag.mjs guardrail ${repoSlug} ${taskName} ${nodeId} <id> pass | aceito --accept "reason"`
+          `\nresolve with: node tools/dag.mjs guardrail ${repoSlug} ${taskName} ${nodeId} <id> pass | accepted --accept "reason"`
       );
     }
   }
@@ -277,10 +277,10 @@ if (cmd === 'set') {
     JSON.stringify({
       ts: new Date().toISOString(),
       from: 'dag',
-      to: 'sala',
+      to: 'room',
       kind: 'status',
       body: `node ${nodeId} → ${status}`,
-      meta: { node: nodeId, para: status },
+      meta: { node: nodeId, to: status },
     }) + '\n'
   );
   console.log(`node "${nodeId}" → ${status}${flags.force ? ' (--force)' : ''} in repos/${repoSlug}/tasks/${taskName}/dag.json`);
@@ -288,13 +288,13 @@ if (cmd === 'set') {
   const { flags, pos } = parseArgs(rest, ['note', 'accept']);
   const [repoSlug, taskArg, nodeId, guardrailId, status] = pos;
   if (!nodeId || !guardrailId || !status) {
-    die('usage: node tools/dag.mjs guardrail <repo> <task> <nodeId> <guardrailId> <pass|falha|pendente> [--note "..."]\n     node tools/dag.mjs guardrail <repo> <task> <nodeId> <guardrailId> aceito --accept "reason"');
+    die('usage: node tools/dag.mjs guardrail <repo> <task> <nodeId> <guardrailId> <pass|fail|pending> [--note "..."]\n     node tools/dag.mjs guardrail <repo> <task> <nodeId> <guardrailId> accepted --accept "reason"');
   }
   if (!GR_STATUS.includes(status)) die(`invalid status: "${status}" — accepted: ${GR_STATUS.join(', ')}`);
-  if (status === 'aceito' && !flags.accept) die('status "aceito" requires --accept "reason" — the reason is recorded in the guardrail\'s note');
-  if (status !== 'aceito' && flags.accept) die('--accept is only valid with status "aceito"');
+  if (status === 'accepted' && !flags.accept) die('status "accepted" requires --accept "reason" — the reason is recorded in the guardrail\'s note');
+  if (status !== 'accepted' && flags.accept) die('--accept is only valid with status "accepted"');
   const { taskDir, taskName } = resolveTask(repoSlug, taskArg);
-  let nota = '';
+  let note = '';
   mutateDag(taskDir, taskName, repoSlug, (dag) => {
   const node = findNode(dag, nodeId);
   const gr = (node.guardrails ?? []).find((g) => g.id === guardrailId);
@@ -304,14 +304,14 @@ if (cmd === 'set') {
   }
   gr.status = status;
   // The note belongs to the current verdict: a new verdict without a note must not inherit
-  // the previous one's justification (a "pass" showing "aceito: no time" would lie).
-  if (status === 'aceito') gr.nota = `aceito: ${flags.accept}`;
-  else if (flags.note !== undefined) gr.nota = flags.note;
-  else delete gr.nota;
-  nota = gr.nota ?? '';
+  // the previous one's justification (a "pass" showing "accepted: no time" would lie).
+  if (status === 'accepted') gr.note = `accepted: ${flags.accept}`;
+  else if (flags.note !== undefined) gr.note = flags.note;
+  else delete gr.note;
+  note = gr.note ?? '';
   });
   touchMeta(taskDir);
-  console.log(`guardrail "${guardrailId}" of node "${nodeId}" → ${status}${nota ? ` (${nota})` : ''}`);
+  console.log(`guardrail "${guardrailId}" of node "${nodeId}" → ${status}${note ? ` (${note})` : ''}`);
 } else if (cmd === 'show') {
   const { pos } = parseArgs(rest, []);
   const [repoSlug, taskArg] = pos;
@@ -326,30 +326,30 @@ if (cmd === 'set') {
   console.log(`DAG of repos/${repoSlug}/tasks/${taskName} (topological order):\n`);
   for (const n of ordem ?? dag.nodes) {
     const deps = n.depends_on?.length ? `  deps: ${n.depends_on.join(', ')}` : '';
-    const agente = n.agente ? `  agente: ${n.agente}` : '';
+    const agent = n.agent ? `  agent: ${n.agent}` : '';
     const tags = n.tags?.length ? `  tags: ${n.tags.join(', ')}` : '';
-    console.log(`[${n.status}] ${n.id} — ${n.titulo}${deps}${agente}${tags}`);
+    console.log(`[${n.status}] ${n.id} — ${n.title}${deps}${agent}${tags}`);
     for (const g of n.guardrails ?? []) {
-      console.log(`    · ${g.id} [${g.status}]${g.nota ? ` — ${g.nota}` : ''}`);
+      console.log(`    · ${g.id} [${g.status}]${g.note ? ` — ${g.note}` : ''}`);
     }
   }
-  const concluidos = dag.nodes.filter((n) => n.status === 'concluida').length;
+  const done = dag.nodes.filter((n) => n.status === 'done').length;
   const c = grCounts(dag.nodes);
-  console.log(`\n${concluidos}/${dag.nodes.length} nodes done — guardrails: ${c.pass} pass / ${c.falha} failed / ${c.pendente} pending / ${c.aceito} accepted`);
+  console.log(`\n${done}/${dag.nodes.length} nodes done — guardrails: ${c.pass} pass / ${c.fail} failed / ${c.pending} pending / ${c.accepted} accepted`);
 } else if (cmd === 'pool') {
   const { flags } = parseArgs(rest, ['tag', 'category']);
   let pool = loadPool();
-  if (flags.category) pool = pool.filter((g) => g.categoria === flags.category);
-  if (flags.tag) pool = pool.filter((g) => (g.aplica_a ?? []).includes(flags.tag));
+  if (flags.category) pool = pool.filter((g) => g.category === flags.category);
+  if (flags.tag) pool = pool.filter((g) => (g.applies_to ?? []).includes(flags.tag));
   if (!pool.length) {
-    const filtro = [flags.category && `category=`, flags.tag && `tag=${flags.tag}`].filter(Boolean).join(', ');
+    const filtro = [flags.category && `category=${flags.category}`, flags.tag && `tag=${flags.tag}`].filter(Boolean).join(', ');
     console.log(`(no guardrail in the pool${filtro ? ` with ${filtro}` : ''})`);
     process.exit(0);
   }
   const wId = Math.max(...pool.map((g) => g.id.length));
-  const wCat = Math.max(...pool.map((g) => g.categoria.length));
+  const wCat = Math.max(...pool.map((g) => g.category.length));
   for (const g of pool) {
-    console.log(`${g.id.padEnd(wId)}  ${g.categoria.padEnd(wCat)}  [${g.severidade}]  ${g.titulo}`);
+    console.log(`${g.id.padEnd(wId)}  ${g.category.padEnd(wCat)}  [${g.severity}]  ${g.title}`);
   }
   console.log(`\n${pool.length} guardrail(s)`);
 } else if (cmd === 'validate') {
@@ -360,7 +360,7 @@ if (cmd === 'set') {
   const erros = validateDag(dag, loadPool());
   if (erros.length) die(`invalid dag.json (${erros.length} error${erros.length > 1 ? 's' : ''}):\n${erros.map((e) => `  - ${e}`).join('\n')}`);
   const c = grCounts(dag.nodes);
-  console.log(`ok: valid DAG — ${dag.nodes.length} nodes, guardrails: ${c.pass} pass / ${c.falha} failed / ${c.pendente} pending / ${c.aceito} accepted`);
+  console.log(`ok: valid DAG — ${dag.nodes.length} nodes, guardrails: ${c.pass} pass / ${c.fail} failed / ${c.pending} pending / ${c.accepted} accepted`);
 } else {
   die('usage: node tools/dag.mjs <set|node-status|guardrail|show|pool|validate> [...]  (the file header documents each subcommand)');
 }

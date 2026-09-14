@@ -2,179 +2,179 @@
   "guardrails": [
     {
       "id": "k8s-probes",
-      "categoria": "k8s",
-      "titulo": "Liveness and readiness probes defined",
-      "aplica_a": ["k8s", "deploy"],
-      "verificacao": "kubectl get deploy -o yaml | check livenessProbe and readinessProbe on every container; readiness should point to an endpoint that reflects real readiness",
-      "severidade": "alta"
+      "category": "k8s",
+      "title": "Liveness and readiness probes defined",
+      "applies_to": ["k8s", "deploy"],
+      "verification": "kubectl get deploy -o yaml | check livenessProbe and readinessProbe on every container; readiness should point to an endpoint that reflects real readiness",
+      "severity": "high"
     },
     {
       "id": "k8s-requests-limits",
-      "categoria": "k8s",
-      "titulo": "CPU/memory requests and limits defined",
-      "aplica_a": ["k8s", "deploy"],
-      "verificacao": "kubectl get deploy -o yaml | check resources.requests and resources.limits on every container; values justified, not copy-pasted from an example",
-      "severidade": "alta"
+      "category": "k8s",
+      "title": "CPU/memory requests and limits defined",
+      "applies_to": ["k8s", "deploy"],
+      "verification": "kubectl get deploy -o yaml | check resources.requests and resources.limits on every container; values justified, not copy-pasted from an example",
+      "severity": "high"
     },
     {
-      "id": "k8s-imagem-tag",
-      "categoria": "k8s",
-      "titulo": "Image without :latest, with a reproducible tag",
-      "aplica_a": ["k8s", "deploy", "docker"],
-      "verificacao": "grep -rn 'image:' k8s/ | no reference to :latest or missing tag; the tag must allow rebuilding the same image",
-      "severidade": "media"
+      "id": "k8s-image-tag",
+      "category": "k8s",
+      "title": "Image without :latest, with a reproducible tag",
+      "applies_to": ["k8s", "deploy", "docker"],
+      "verification": "grep -rn 'image:' k8s/ | no reference to :latest or missing tag; the tag must allow rebuilding the same image",
+      "severity": "medium"
     },
     {
       "id": "k8s-configmap-secret",
-      "categoria": "k8s",
-      "titulo": "Configuration via ConfigMap/Secret, not hardcoded",
-      "aplica_a": ["k8s", "deploy", "config"],
-      "verificacao": "kubectl get deploy -o yaml | sensitive or environment config comes from configMapKeyRef/secretKeyRef/envFrom; no fixed configuration value in the manifest or the image",
-      "severidade": "alta"
+      "category": "k8s",
+      "title": "Configuration via ConfigMap/Secret, not hardcoded",
+      "applies_to": ["k8s", "deploy", "config"],
+      "verification": "kubectl get deploy -o yaml | sensitive or environment config comes from configMapKeyRef/secretKeyRef/envFrom; no fixed configuration value in the manifest or the image",
+      "severity": "high"
     },
     {
       "id": "k8s-service-selector",
-      "categoria": "k8s",
-      "titulo": "Service selector matches the Deployment's labels",
-      "aplica_a": ["k8s", "deploy"],
-      "verificacao": "kubectl get endpoints <svc> | non-empty endpoint list; compare the Service's spec.selector with the Deployment's template.metadata.labels",
-      "severidade": "alta"
+      "category": "k8s",
+      "title": "Service selector matches the Deployment's labels",
+      "applies_to": ["k8s", "deploy"],
+      "verification": "kubectl get endpoints <svc> | non-empty endpoint list; compare the Service's spec.selector with the Deployment's template.metadata.labels",
+      "severity": "high"
     },
     {
-      "id": "k8s-replicas-resiliencia",
-      "categoria": "k8s",
-      "titulo": "Replicas >= 2 when the statement asks for resilience",
-      "aplica_a": ["k8s", "deploy", "resiliencia"],
-      "verificacao": "kubectl get deploy | READY shows 2/2 or more; kubectl delete pod on one of them and confirm the service keeps responding and the pod gets recreated",
-      "severidade": "alta"
+      "id": "k8s-replicas-resilience",
+      "category": "k8s",
+      "title": "Replicas >= 2 when the statement asks for resilience",
+      "applies_to": ["k8s", "deploy", "resilience"],
+      "verification": "kubectl get deploy | READY shows 2/2 or more; kubectl delete pod on one of them and confirm the service keeps responding and the pod gets recreated",
+      "severity": "high"
     },
     {
-      "id": "cod-timeout-retry",
-      "categoria": "codigo",
-      "titulo": "External call with timeout and retry with backoff",
-      "aplica_a": ["codigo", "http", "crawler", "integracao"],
-      "verificacao": "locate every network call in the code: does it have an explicit timeout? Limited retry with growing wait between attempts? Does the final failure become a handled error, not an uncaught exception?",
-      "severidade": "alta"
+      "id": "code-timeout-retry",
+      "category": "code",
+      "title": "External call with timeout and retry with backoff",
+      "applies_to": ["code", "http", "crawler", "integration"],
+      "verification": "locate every network call in the code: does it have an explicit timeout? Limited retry with growing wait between attempts? Does the final failure become a handled error, not an uncaught exception?",
+      "severity": "high"
     },
     {
-      "id": "cod-valida-borda",
-      "categoria": "codigo",
-      "titulo": "Input validated at the boundary",
-      "aplica_a": ["codigo", "api"],
-      "verificacao": "send a request with a missing, empty and malformed parameter: the response is a clear error (4xx) before any processing, with no stack trace leaking",
-      "severidade": "alta"
+      "id": "code-validate-input",
+      "category": "code",
+      "title": "Input validated at the boundary",
+      "applies_to": ["code", "api"],
+      "verification": "send a request with a missing, empty and malformed parameter: the response is a clear error (4xx) before any processing, with no stack trace leaking",
+      "severity": "high"
     },
     {
-      "id": "cod-sem-segredo",
-      "categoria": "codigo",
-      "titulo": "No secret in versioned code or manifest",
-      "aplica_a": ["codigo", "k8s", "config"],
-      "verificacao": "grep -rniE 'password|secret|token|api_key' in the code and manifests | no literal credential; secrets come from env/Secret",
-      "severidade": "alta"
+      "id": "code-no-secret",
+      "category": "code",
+      "title": "No secret in versioned code or manifest",
+      "applies_to": ["code", "k8s", "config"],
+      "verification": "grep -rniE 'password|secret|token|api_key' in the code and manifests | no literal credential; secrets come from env/Secret",
+      "severity": "high"
     },
     {
-      "id": "cod-deps-minimas",
-      "categoria": "codigo",
-      "titulo": "Minimal, justified dependencies",
-      "aplica_a": ["codigo"],
-      "verificacao": "open the dependency manifest (package.json/requirements.txt): is every entry actually used? Could any of them be solved with the standard library in a few lines?",
-      "severidade": "media"
+      "id": "code-minimal-deps",
+      "category": "code",
+      "title": "Minimal, justified dependencies",
+      "applies_to": ["code"],
+      "verification": "open the dependency manifest (package.json/requirements.txt): is every entry actually used? Could any of them be solved with the standard library in a few lines?",
+      "severity": "medium"
     },
     {
-      "id": "cod-logs-nivel",
-      "categoria": "codigo",
-      "titulo": "Logs at the right level, no forgotten debug output",
-      "aplica_a": ["codigo", "operacao"],
-      "verificacao": "grep -rn 'print\\|console.log' in the code | no debug printf outside the logger; errors log at error level with context, normal flow at info",
-      "severidade": "media"
+      "id": "code-log-level",
+      "category": "code",
+      "title": "Logs at the right level, no forgotten debug output",
+      "applies_to": ["code", "operations"],
+      "verification": "grep -rn 'print\\|console.log' in the code | no debug printf outside the logger; errors log at error level with context, normal flow at info",
+      "severity": "medium"
     },
     {
-      "id": "api-codigos-erro",
-      "categoria": "api",
-      "titulo": "Error codes mapped (400/404/5xx distinct)",
-      "aplica_a": ["api", "codigo"],
-      "verificacao": "curl with invalid input → 400; nonexistent resource → 404; simulated internal failure → 5xx; the three cases return distinct codes and bodies",
-      "severidade": "alta"
+      "id": "api-error-codes",
+      "category": "api",
+      "title": "Error codes mapped (400/404/5xx distinct)",
+      "applies_to": ["api", "code"],
+      "verification": "curl with invalid input → 400; nonexistent resource → 404; simulated internal failure → 5xx; the three cases return distinct codes and bodies",
+      "severity": "high"
     },
     {
-      "id": "api-healthcheck-leve",
-      "categoria": "api",
-      "titulo": "Healthcheck without a heavy dependency",
-      "aplica_a": ["api", "k8s"],
-      "verificacao": "read the /healthz handler: does it respond fast without calling an external service or running an expensive query — otherwise the probe takes down a healthy pod whenever the dependency hiccups",
-      "severidade": "media"
+      "id": "api-light-healthcheck",
+      "category": "api",
+      "title": "Healthcheck without a heavy dependency",
+      "applies_to": ["api", "k8s"],
+      "verification": "read the /healthz handler: does it respond fast without calling an external service or running an expensive query — otherwise the probe takes down a healthy pod whenever the dependency hiccups",
+      "severity": "medium"
     },
     {
-      "id": "api-contrato-doc",
-      "categoria": "api",
-      "titulo": "API contract documented",
-      "aplica_a": ["api", "docs"],
-      "verificacao": "README or OpenAPI lists every route with method, parameters, example response and error codes; confirm it matches the real behavior via curl",
-      "severidade": "media"
+      "id": "api-contract-doc",
+      "category": "api",
+      "title": "API contract documented",
+      "applies_to": ["api", "docs"],
+      "verification": "README or OpenAPI lists every route with method, parameters, example response and error codes; confirm it matches the real behavior via curl",
+      "severity": "medium"
     },
     {
       "id": "api-cache-ttl",
-      "categoria": "api",
-      "titulo": "Cache with TTL and clear invalidation",
-      "aplica_a": ["api", "codigo", "cache"],
-      "verificacao": "when there is a cache: where is the TTL configured? What happens when it expires? Is there a way to force-refresh a stale entry? Test two consecutive requests and one after the TTL",
-      "severidade": "media"
+      "category": "api",
+      "title": "Cache with TTL and clear invalidation",
+      "applies_to": ["api", "code", "cache"],
+      "verification": "when there is a cache: where is the TTL configured? What happens when it expires? Is there a way to force-refresh a stale entry? Test two consecutive requests and one after the TTL",
+      "severity": "medium"
     },
     {
-      "id": "tst-caso-erro",
-      "categoria": "testes",
-      "titulo": "Tests cover the error case, not just the happy path",
-      "aplica_a": ["testes", "codigo"],
-      "verificacao": "list the tests: is there at least one per relevant failure behavior (invalid input, nonexistent resource, dependency down)?",
-      "severidade": "alta"
+      "id": "test-error-case",
+      "category": "tests",
+      "title": "Tests cover the error case, not just the happy path",
+      "applies_to": ["tests", "code"],
+      "verification": "list the tests: is there at least one per relevant failure behavior (invalid input, nonexistent resource, dependency down)?",
+      "severity": "high"
     },
     {
-      "id": "tst-nao-tautologico",
-      "categoria": "testes",
-      "titulo": "A test would fail if the code broke",
-      "aplica_a": ["testes"],
-      "verificacao": "deliberately break a line of the code under test and run the suite: at least one test turns red; a test that compares the mock to itself doesn't count",
-      "severidade": "alta"
+      "id": "test-not-tautological",
+      "category": "tests",
+      "title": "A test would fail if the code broke",
+      "applies_to": ["tests"],
+      "verification": "deliberately break a line of the code under test and run the suite: at least one test turns red; a test that compares the mock to itself doesn't count",
+      "severity": "high"
     },
     {
-      "id": "tst-fixture-offline",
-      "categoria": "testes",
-      "titulo": "Offline fixture for external dependency",
-      "aplica_a": ["testes", "crawler", "integracao"],
-      "verificacao": "turn off the network (or point to a nonexistent host) and run the suite: it still passes, using a local fixture/recording instead of the real service",
-      "severidade": "media"
+      "id": "test-offline-fixture",
+      "category": "tests",
+      "title": "Offline fixture for external dependency",
+      "applies_to": ["tests", "crawler", "integration"],
+      "verification": "turn off the network (or point to a nonexistent host) and run the suite: it still passes, using a local fixture/recording instead of the real service",
+      "severity": "medium"
     },
     {
-      "id": "tst-um-comando",
-      "categoria": "testes",
-      "titulo": "The suite runs with one documented command",
-      "aplica_a": ["testes", "docs"],
-      "verificacao": "follow the README to the letter on a clean clone: a single command runs all the tests and exits with the correct status code",
-      "severidade": "media"
+      "id": "test-one-command",
+      "category": "tests",
+      "title": "The suite runs with one documented command",
+      "applies_to": ["tests", "docs"],
+      "verification": "follow the README to the letter on a clean clone: a single command runs all the tests and exits with the correct status code",
+      "severity": "medium"
     },
     {
       "id": "op-rollback",
-      "categoria": "operacao",
-      "titulo": "Rollback documented",
-      "aplica_a": ["operacao", "deploy", "k8s"],
-      "verificacao": "the README says how to go back to the previous version (e.g. kubectl rollout undo) and the command was run at least once to prove it works",
-      "severidade": "media"
+      "category": "operations",
+      "title": "Rollback documented",
+      "applies_to": ["operations", "deploy", "k8s"],
+      "verification": "the README says how to go back to the previous version (e.g. kubectl rollout undo) and the command was run at least once to prove it works",
+      "severity": "medium"
     },
     {
-      "id": "op-limpeza",
-      "categoria": "operacao",
-      "titulo": "No orphaned resources left behind",
-      "aplica_a": ["operacao", "k8s", "docker"],
-      "verificacao": "kubectl get all and docker images | no abandoned test pod/deployment/image; anything not part of the deliverable was removed",
-      "severidade": "baixa"
+      "id": "op-cleanup",
+      "category": "operations",
+      "title": "No orphaned resources left behind",
+      "applies_to": ["operations", "k8s", "docker"],
+      "verification": "kubectl get all and docker images | no abandoned test pod/deployment/image; anything not part of the deliverable was removed",
+      "severity": "low"
     },
     {
-      "id": "op-reprodutivel",
-      "categoria": "operacao",
-      "titulo": "Reproducible step by step from scratch",
-      "aplica_a": ["operacao", "docs", "deploy"],
-      "verificacao": "follow the README on a clean environment (or mentally simulate each command): the sequence brings everything up from scratch with no implicit step, in the order written",
-      "severidade": "alta"
+      "id": "op-reproducible",
+      "category": "operations",
+      "title": "Reproducible step by step from scratch",
+      "applies_to": ["operations", "docs", "deploy"],
+      "verification": "follow the README on a clean environment (or mentally simulate each command): the sequence brings everything up from scratch with no implicit step, in the order written",
+      "severity": "high"
     }
   ]
 }

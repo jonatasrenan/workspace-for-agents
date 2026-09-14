@@ -2,7 +2,7 @@
 //
 // Two classes:
 //   - structural (default): meta.json readable with the fields the panel uses;
-//     a task marked "concluida" has every DAG node concluida, no guardrail
+//     a task marked "done" has every DAG node done, no guardrail
 //     pending/failed, and no unanswered question to the human. These are the
 //     ones wired into the end-of-turn Stop hook, and they BLOCK.
 //   - lints (--lint): quality-of-trail predicates. They never block a turn —
@@ -114,12 +114,12 @@ function mostRecentMtime(dir) {
 const STRUCT_RULES = {
   meta: {
     type: 'structural',
-    requires: 'Every repo\'s and task\'s meta.json parses as JSON and has the fields the panel reads: title, status, created, updated (repo also: workspace, stack; task also: a status in todo|em-andamento|concluida).',
+    requires: 'Every repo\'s and task\'s meta.json parses as JSON and has the fields the panel reads: title, status, created, updated (repo also: workspace, stack; task also: a status in todo|in-progress|done).',
     returns: 'One "fail" per missing/invalid field or unreadable file.',
   },
   gate: {
     type: 'structural',
-    requires: 'A task marked "concluida" has a dag.json with at least one node, every node concluida, no guardrail pendente/falha across any node, and no question/decision to the human left "aberta" (open) by tools/questions.mjs\'s link rule.',
+    requires: 'A task marked "done" has a dag.json with at least one node, every node done, no guardrail pending/fail across any node, and no question/decision to the human left open by tools/questions.mjs\'s link rule.',
     returns: 'One "fail" per violated condition, naming the offending node(s)/guardrail(s)/message(s).',
   },
   vacuum: {
@@ -137,8 +137,8 @@ const RULES = {
   },
   stub: {
     type: 'lint',
-    requires: 'A task that is todo, em-andamento or concluida has 00-brief.md and 10-plan.md filled in (not identical to the template).',
-    returns: '"fail" per stub enunciado/plano; "warn" per stub 20-journal.md/30-review.md (these two don\'t block, but are still worth flagging).',
+    requires: 'A task that is todo, in-progress or done has 00-brief.md and 10-plan.md filled in (not identical to the template).',
+    returns: '"fail" per stub brief/plan; "warn" per stub 20-journal.md/30-review.md (these two don\'t block, but are still worth flagging).',
   },
   dag: {
     type: 'lint',
@@ -147,18 +147,18 @@ const RULES = {
   },
   accepted: {
     type: 'lint',
-    requires: 'Every DAG guardrail with status "aceito" has a reason recorded in its note (via --accept), and that reason\'s text also appears somewhere in 20-journal.md.',
+    requires: 'Every DAG guardrail with status "accepted" has a reason recorded in its note (via --accept), and that reason\'s text also appears somewhere in 20-journal.md.',
     returns: '"fail" per accepted guardrail with a missing reason or a reason not echoed in the journal; "not checked" when the task has no accepted guardrail.',
   },
   trail: {
     type: 'lint',
-    requires: 'A task marked "concluida" has at least one entry in costs.jsonl AND at least one in commits.jsonl.',
-    returns: '"fail" naming which of the two is missing; "not checked" for a task not yet concluida.',
+    requires: 'A task marked "done" has at least one entry in costs.jsonl AND at least one in commits.jsonl.',
+    returns: '"fail" naming which of the two is missing; "not checked" for a task not yet done.',
   },
   awaiting: {
     type: 'lint',
-    requires: 'A task marked "concluida" has no question/decision "aberta" per tools/questions.mjs (same rule as the "gate" structural check — a question closes by an explicit link, not by being followed by any later message).',
-    returns: '"fail" with the count and a one-line excerpt of each; "not checked" for a task not yet concluida.',
+    requires: 'A task marked "done" has no question/decision still open per tools/questions.mjs (same rule as the "gate" structural check — a question closes by an explicit link, not by being followed by any later message).',
+    returns: '"fail" with the count and a one-line excerpt of each; "not checked" for a task not yet done.',
   },
 };
 
@@ -185,7 +185,7 @@ function printRules() {
 // ---------------------------------------------------------------------------
 const REPO_META_FIELDS = ['title', 'status', 'created', 'updated'];
 const TASK_META_FIELDS = ['title', 'status', 'created', 'updated'];
-const TASK_STATUSES = ['todo', 'em-andamento', 'concluida'];
+const TASK_STATUSES = ['todo', 'in-progress', 'done'];
 
 function structuralRepo(repoSlug, onlyTask) {
   const out = [];
@@ -218,23 +218,23 @@ function structuralTask(repoSlug, repoDir, taskName) {
   if (meta.status !== undefined && !TASK_STATUSES.includes(meta.status)) {
     out.push(finding('meta', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: meta.json has invalid status "${meta.status}" — accepted: ${TASK_STATUSES.join(', ')}` }));
   }
-  if (meta.status !== 'concluida') return out;
+  if (meta.status !== 'done') return out;
 
   const dag = readJson(path.join(taskDir, 'dag.json'));
   if (!dag || !Array.isArray(dag.nodes) || !dag.nodes.length) {
-    out.push(finding('gate', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: marked concluida but has no dag.json (or it has no nodes)` }));
+    out.push(finding('gate', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: marked done but has no dag.json (or it has no nodes)` }));
   } else {
-    const open = dag.nodes.filter((n) => n.status !== 'concluida');
-    if (open.length) out.push(finding('gate', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: marked concluida with ${open.length} DAG node(s) not concluida: ${open.map((n) => n.id).join(', ')}` }));
+    const open = dag.nodes.filter((n) => n.status !== 'done');
+    if (open.length) out.push(finding('gate', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: marked done with ${open.length} DAG node(s) not done: ${open.map((n) => n.id).join(', ')}` }));
     const badGr = [];
-    for (const n of dag.nodes) for (const g of n.guardrails ?? []) if (g.status === 'pendente' || g.status === 'falha') badGr.push(`${n.id}/${g.id}[${g.status}]`);
-    if (badGr.length) out.push(finding('gate', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: marked concluida with unresolved guardrail(s): ${badGr.join(', ')}` }));
+    for (const n of dag.nodes) for (const g of n.guardrails ?? []) if (g.status === 'pending' || g.status === 'fail') badGr.push(`${n.id}/${g.id}[${g.status}]`);
+    if (badGr.length) out.push(finding('gate', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: marked done with unresolved guardrail(s): ${badGr.join(', ')}` }));
   }
 
   const messages = readJsonl(path.join(taskDir, 'messages.jsonl'));
   const pending = openQuestions(messages);
   if (pending.length) {
-    out.push(finding('gate', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: marked concluida with ${pending.length} unanswered question(s)/decision(s) to the human` }));
+    out.push(finding('gate', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: marked done with ${pending.length} unanswered question(s)/decision(s) to the human` }));
   }
   return out;
 }
@@ -348,32 +348,32 @@ function lintTask(repoSlug, repoDir, taskName, allowed) {
     }
   }
 
-  // aceito — every accepted guardrail needs a reason, echoed in the journal
+  // accepted — every accepted guardrail needs a reason, echoed in the journal
   const dag2 = readJson(path.join(taskDir, 'dag.json'));
-  const accepted = dag2?.nodes ? dag2.nodes.flatMap((n) => (n.guardrails ?? []).filter((g) => g.status === 'aceito').map((g) => ({ node: n.id, ...g }))) : [];
+  const accepted = dag2?.nodes ? dag2.nodes.flatMap((n) => (n.guardrails ?? []).filter((g) => g.status === 'accepted').map((g) => ({ node: n.id, ...g }))) : [];
   if (!accepted.length) {
     out.push(finding('accepted', 'not-checked', { repo: repoSlug, task: taskName, msg: `${ref}: no accepted guardrail` }));
   } else {
     const journal = (contents['20-journal.md'] ?? '').toLowerCase();
     for (const g of accepted) {
-      const reason = (g.nota ?? '').replace(/^aceito:\s*/i, '').trim();
+      const reason = (g.note ?? '').replace(/^(accepted|aceito):\s*/i, '').trim();
       if (!reason) {
-        out.push(finding('accepted', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: guardrail "${g.id}" on node "${g.node}" is aceito with no reason recorded` }));
+        out.push(finding('accepted', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: guardrail "${g.id}" on node "${g.node}" is accepted with no reason recorded` }));
       } else if (!journal.includes(reason.toLowerCase())) {
         out.push(finding('accepted', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: guardrail "${g.id}" on node "${g.node}" accepted with reason "${reason}", not found in 20-journal.md` }));
       }
     }
   }
 
-  // trail / awaiting — only meaningful once the task is concluida
-  if (status !== 'concluida') {
-    out.push(finding('trail', 'not-checked', { repo: repoSlug, task: taskName, msg: `${ref}: not concluida yet` }));
-    out.push(finding('awaiting', 'not-checked', { repo: repoSlug, task: taskName, msg: `${ref}: not concluida yet` }));
+  // trail / awaiting — only meaningful once the task is done
+  if (status !== 'done') {
+    out.push(finding('trail', 'not-checked', { repo: repoSlug, task: taskName, msg: `${ref}: not done yet` }));
+    out.push(finding('awaiting', 'not-checked', { repo: repoSlug, task: taskName, msg: `${ref}: not done yet` }));
   } else {
     const costs = readJsonl(path.join(taskDir, 'costs.jsonl'));
     const commits = readJsonl(path.join(taskDir, 'commits.jsonl'));
     const missing = [!costs.length && 'costs.jsonl', !commits.length && 'commits.jsonl'].filter(Boolean);
-    if (missing.length) out.push(finding('trail', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: concluida with no ${missing.join(' and ')} recorded` }));
+    if (missing.length) out.push(finding('trail', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: done with no ${missing.join(' and ')} recorded` }));
 
     const messages = readJsonl(path.join(taskDir, 'messages.jsonl'));
     const pending = openQuestions(messages);

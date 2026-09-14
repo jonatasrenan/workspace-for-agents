@@ -82,11 +82,11 @@ function parseNum(flags, name) {
 
 // Price for the model: exact match, otherwise the longest key contained in the model name (e.g.:
 // "claude-sonnet-4-5" matches "claude-sonnet"); null = unknown → falls back to default.
-function priceFor(modelo) {
-  if (!modelo) return null;
-  if (PRICES[modelo]) return PRICES[modelo];
+function priceFor(model) {
+  if (!model) return null;
+  if (PRICES[model]) return PRICES[model];
   const candidatas = Object.keys(PRICES)
-    .filter((k) => k !== 'default' && modelo.includes(k))
+    .filter((k) => k !== 'default' && model.includes(k))
     .sort((a, b) => b.length - a.length);
   return candidatas.length ? PRICES[candidatas[0]] : null;
 }
@@ -95,7 +95,7 @@ function priceFor(modelo) {
 // in/out split — in that case applies the default's in/out average to the total).
 function entryCost(e) {
   const temSplit = Number.isFinite(e.tokens_in) && Number.isFinite(e.tokens_out);
-  const preco = priceFor(e.modelo);
+  const preco = priceFor(e.model);
   if (temSplit && preco) return { usd: (e.tokens_in * preco.in + e.tokens_out * preco.out) / 1e6, approx: false };
   const d = PRICES.default;
   if (temSplit) return { usd: (e.tokens_in * d.in + e.tokens_out * d.out) / 1e6, approx: true };
@@ -179,11 +179,11 @@ if (cmd === 'add') {
   }
   if (temSplit && total === undefined) total = tokensIn + tokensOut;
   const { taskDir, taskName } = resolveTask(repoSlug, taskArg);
-  const registro = { ts: new Date().toISOString(), agente: flags.agent };
+  const registro = { ts: new Date().toISOString(), agent: flags.agent };
   if (tokensIn !== undefined) registro.tokens_in = tokensIn;
   if (tokensOut !== undefined) registro.tokens_out = tokensOut;
   registro.tokens_total = total;
-  if (flags.model) registro.modelo = flags.model;
+  if (flags.model) registro.model = flags.model;
   if (flags.label) registro.label = flags.label;
   fs.appendFileSync(path.join(taskDir, 'costs.jsonl'), JSON.stringify(registro) + '\n');
   touchMeta(taskDir);
@@ -195,7 +195,7 @@ if (cmd === 'add') {
   if (repoSlug && taskArg) {
     const { taskDir, taskName } = resolveTask(repoSlug, taskArg);
     const entries = readCosts(taskDir).map((e) => ({ ...e }));
-    printTable(`${repoSlug}/${taskName} (by agent)`, aggregate(entries, (e) => e.agente ?? '?'));
+    printTable(`${repoSlug}/${taskName} (by agent)`, aggregate(entries, (e) => e.agent ?? '?'));
   } else if (repoSlug) {
     const repoDir = resolveRepo(repoSlug);
     const tasksDir = path.join(repoDir, 'tasks');

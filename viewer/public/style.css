@@ -123,7 +123,7 @@ button.task-rail { height: 32px; }
 .rail-ini { font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; line-height: 1; }
 button.repo-rail .dot { width: 6px; height: 6px; border-radius: 50%; }
 button.repo-rail .dot.ok { background: var(--ok); }
-button.repo-rail .dot.andamento { background: var(--run); }
+button.repo-rail .dot.running { background: var(--run); }
 button.repo-rail:hover, button.task-rail:hover { border-color: var(--border); color: var(--text); }
 button.repo-rail.active, button.task-rail.active {
   border-color: var(--accent);
@@ -131,8 +131,8 @@ button.repo-rail.active, button.task-rail.active {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 button.repo-rail.attn, button.task-rail.attn { border-color: color-mix(in srgb, var(--wait) 55%, var(--border)); }
-button.task-rail.concluida { color: var(--ok); }
-button.task-rail.andamento { color: var(--run); }
+button.task-rail.done { color: var(--ok); }
+button.task-rail.running { color: var(--run); }
 button.task-rail.blocked { opacity: 0.5; }
 button.repo {
   display: flex;
@@ -156,7 +156,7 @@ button.repo.active {
 .repo-title { display: flex; align-items: center; gap: 7px; font-weight: 600; }
 .repo-title .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .repo-title .dot.ok { background: var(--ok); }
-.repo-title .dot.andamento { background: var(--run); }
+.repo-title .dot.running { background: var(--run); }
 /* repo card badges: "N tasks", "N 🔒", "✋ awaiting", status, tokens */
 .repo .repo-badges { display: flex; flex-wrap: wrap; gap: 4px; padding-left: 15px; margin-top: 2px; }
 .repo .sb {
@@ -206,9 +206,9 @@ button.task:hover { border-color: var(--border); }
 button.task .task-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.task .dag-badge { flex: none; }
 button.task .ticon { font-size: 11px; }
-button.task.concluida .ticon { color: var(--ok); }
-button.task.andamento .ticon { color: var(--run); animation: dag-pulse 1.3s ease-in-out infinite; }
-button.task.andamento { border-color: color-mix(in srgb, var(--run) 45%, var(--border)); }
+button.task.done .ticon { color: var(--ok); }
+button.task.running .ticon { color: var(--run); animation: dag-pulse 1.3s ease-in-out infinite; }
+button.task.running { border-color: color-mix(in srgb, var(--run) 45%, var(--border)); }
 button.task.active { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); border-color: var(--accent); }
 button.task.overview { font-weight: 650; }
 /* task blocked by an unfinished dependency: dimmed (stays clickable) */
@@ -382,8 +382,8 @@ main .empty code {
 tr.task-row { cursor: pointer; }
 tr.task-row:hover td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .status { font-size: 12.5px; }
-.status.concluida { color: var(--ok); }
-.status.andamento { color: var(--run); }
+.status.done { color: var(--ok); }
+.status.running { color: var(--run); }
 .status.todo { color: var(--muted); }
 
 /* dependencies between tasks */
@@ -437,7 +437,7 @@ button.tab.panel-tab.waiting .minibadge { color: var(--wait); border-color: var(
 button.tab.panel-tab.waiting.active { background: color-mix(in srgb, var(--wait) 14%, transparent); }
 
 /* Room — conversation timeline */
-.sala { display: flex; flex-direction: column; gap: 10px; max-width: 820px; margin: 0; }
+.room { display: flex; flex-direction: column; gap: 10px; max-width: 820px; margin: 0; }
 .msg {
   border: 1px solid var(--border);
   border-left: 3px solid var(--muted);
@@ -492,7 +492,7 @@ button.tab.panel-tab.waiting.active { background: color-mix(in srgb, var(--wait)
 .reply-err { color: #ef4444; font-size: 12px; }
 /* question state — closes by an explicit link (tools/questions.mjs), not by
    message order, so the badge always names the real state, never a guess. */
-.perg-badge {
+.q-badge {
   display: inline-block;
   margin-top: 6px;
   border-radius: 999px;
@@ -501,17 +501,17 @@ button.tab.panel-tab.waiting.active { background: color-mix(in srgb, var(--wait)
   font-weight: 600;
   border: 1px solid var(--border);
 }
-.perg-badge.perg-aberta { color: var(--warn); border-color: var(--warn); }
-.perg-badge.perg-respondida { color: var(--ok); border-color: var(--ok); }
-.perg-badge.perg-dispensada { color: var(--muted); border-color: var(--muted); }
-.perg-closed-by {
+.q-badge.q-open { color: var(--warn); border-color: var(--warn); }
+.q-badge.q-answered { color: var(--ok); border-color: var(--ok); }
+.q-badge.q-dismissed { color: var(--muted); border-color: var(--muted); }
+.q-closed-by {
   margin-top: 4px;
   padding: 4px 10px;
   border-left: 2px solid var(--border);
   font-size: 12px;
   color: var(--muted);
 }
-.perg-closed-by .msg-ts { margin-right: 6px; }
+.q-closed-by .msg-ts { margin-right: 6px; }
 /* shared page (read-only): the pending item becomes a record, with no reply box */
 .reply-static {
   margin-top: 8px;
@@ -762,9 +762,9 @@ button.tab.panel-tab.alert.active { background: color-mix(in srgb, #ef4444 14%, 
 .dag-gr { color: var(--muted); display: inline-flex; gap: 8px; align-items: center; }
 .dag-gr b { font-weight: 600; font-family: ui-monospace, monospace; }
 .gr-pass { color: var(--ok); }
-.gr-falha { color: #ef4444; }
-.gr-aceito { color: var(--warn); }
-.gr-pendente { color: var(--muted); }
+.gr-fail { color: #ef4444; }
+.gr-accepted { color: var(--warn); }
+.gr-pending { color: var(--muted); }
 .dag .mermaid-block { margin-bottom: 18px; }
 /* a "running" node pulses (class applied by mermaid to the node's group) */
 .mermaid-block .dagexec rect { animation: dag-pulse 1.3s ease-in-out infinite; }
@@ -799,11 +799,11 @@ button.tab.panel-tab.alert.active { background: color-mix(in srgb, #ef4444 14%, 
   white-space: nowrap;
 }
 .gr-badge.gr-pass { color: var(--ok); }
-.gr-badge.gr-falha { color: #ef4444; background: color-mix(in srgb, #ef4444 12%, transparent); }
-.gr-badge.gr-aceito { color: var(--warn); }
-.gr-badge.gr-pendente { color: var(--muted); }
+.gr-badge.gr-fail { color: #ef4444; background: color-mix(in srgb, #ef4444 12%, transparent); }
+.gr-badge.gr-accepted { color: var(--warn); }
+.gr-badge.gr-pending { color: var(--muted); }
 .gr-sev { font-size: 10.5px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; }
-.gr-nota { font-size: 12px; color: var(--warn); margin: 2px 0 0 4px; opacity: 0.85; }
+.gr-note { font-size: 12px; color: var(--warn); margin: 2px 0 0 4px; opacity: 0.85; }
 
 /* Costs — table per agent */
 .cost-table { border-collapse: collapse; width: 100%; max-width: 640px; font-size: 13.5px; }
@@ -828,9 +828,9 @@ button.tab.panel-tab.alert.active { background: color-mix(in srgb, #ef4444 14%, 
 }
 .progress-line b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
 .progress-line b.gr-pass { color: var(--ok); }
-.progress-line b.gr-falha { color: var(--err); }
-.progress-line b.gr-aceito { color: var(--wait); }
-.progress-line b.gr-pendente { color: var(--muted); }
+.progress-line b.gr-fail { color: var(--err); }
+.progress-line b.gr-accepted { color: var(--wait); }
+.progress-line b.gr-pending { color: var(--muted); }
 .prog-sep { margin: 0 8px; opacity: 0.7; }
 .state-grid {
   display: grid;
@@ -871,7 +871,7 @@ button.tab.panel-tab.alert.active { background: color-mix(in srgb, #ef4444 14%, 
   color: var(--muted);
 }
 .acc-url { color: var(--accent); font-size: 12px; overflow-wrap: anywhere; }
-/* nota = instructions for recreating the access — visible, not a tooltip */
+/* note = instructions for recreating the access — visible, not a tooltip */
 .acc-note { font-size: 11.5px; color: var(--muted); margin: 2px 0 0 15px; line-height: 1.45; }
 /* Runtime */
 .rt-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 13px; margin: 3px 0; }
@@ -1000,8 +1000,8 @@ button.tab.panel-tab.alert.active { background: color-mix(in srgb, #ef4444 14%, 
 .tl-bus.k-question .tl-dot, .tl-bus.k-approval .tl-dot { color: var(--wait); }
 .tl-bus.k-status .tl-dot { color: var(--muted); }
 .tl-dag .tl-dot { color: var(--run); }
-.tl-dag.dag-concluida .tl-dot { color: var(--ok); }
-.tl-dag.dag-bloqueada .tl-dot { color: var(--err); }
+.tl-dag.dag-done .tl-dot { color: var(--ok); }
+.tl-dag.dag-blocked .tl-dot { color: var(--err); }
 .tl-dag .tl-text { font-family: ui-monospace, monospace; font-size: 12.5px; }
 .tl-commit .tl-dot { color: var(--accent); }
 .tl-commit .tl-who { color: var(--accent); }

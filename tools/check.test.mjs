@@ -49,39 +49,39 @@ function makeRepoWithTask(env) {
   return { T, env: e, taskDir, taskName };
 }
 
-test('structural: concluida task with an open DAG node blocks (fail, exit 1)', () => {
+test('structural: done task with an open DAG node blocks (fail, exit 1)', () => {
   const { T, env, taskDir, taskName } = makeRepoWithTask();
-  const dagSet = run(DAG, ['set', 'sonda', '01'], { env, input: JSON.stringify({ nodes: [{ id: 'n1', titulo: 'x', status: 'todo', tags: [] }] }) });
+  const dagSet = run(DAG, ['set', 'sonda', '01'], { env, input: JSON.stringify({ nodes: [{ id: 'n1', title: 'x', status: 'todo', tags: [] }] }) });
   assert.equal(dagSet.status, 0, dagSet.stderr);
-  setStatus(path.join(taskDir, 'meta.json'), 'concluida');
+  setStatus(path.join(taskDir, 'meta.json'), 'done');
 
   const res = run(CHECK, ['sonda', '01'], { env });
   assert.equal(res.status, 1);
-  assert.match(res.stdout, /gate.*not concluida/);
+  assert.match(res.stdout, /gate.*not done/);
   assert.match(res.stdout, new RegExp(`1 fail`));
 
   fs.rmSync(T, { recursive: true, force: true });
   void taskName;
 });
 
-test('gate/aguardando: an unanswered question blocks a concluida task; an explicit link (not just a later message) clears it', () => {
+test('gate/aguardando: an unanswered question blocks a done task; an explicit link (not just a later message) clears it', () => {
   const { T, env, taskDir } = makeRepoWithTask();
-  const dagSet = run(DAG, ['set', 'sonda', '01'], { env, input: JSON.stringify({ nodes: [{ id: 'n1', titulo: 'x', status: 'concluida', tags: [] }] }) });
+  const dagSet = run(DAG, ['set', 'sonda', '01'], { env, input: JSON.stringify({ nodes: [{ id: 'n1', title: 'x', status: 'done', tags: [] }] }) });
   assert.equal(dagSet.status, 0, dagSet.stderr);
 
-  const post = run(BUS, ['post', 'sonda', '01', '--from', 'piloto', '--to', 'humano', '--kind', 'question', 'deploy A or B?'], { env });
+  const post = run(BUS, ['post', 'sonda', '01', '--from', 'pilot', '--to', 'human', '--kind', 'question', 'deploy A or B?'], { env });
   assert.equal(post.status, 0, post.stderr);
   const id = post.stdout.match(/\[([0-9]+-[a-z0-9]+)\]/)[1];
 
   // an unrelated later message from the human does NOT close the question by itself
-  run(BUS, ['post', 'sonda', '01', '--from', 'humano', '--to', 'piloto', '--kind', 'status', 'unrelated chatter'], { env });
-  setStatus(path.join(taskDir, 'meta.json'), 'concluida');
+  run(BUS, ['post', 'sonda', '01', '--from', 'human', '--to', 'pilot', '--kind', 'status', 'unrelated chatter'], { env });
+  setStatus(path.join(taskDir, 'meta.json'), 'done');
   let res = run(CHECK, ['sonda', '01'], { env });
   assert.equal(res.status, 1);
   assert.match(res.stdout, /gate.*unanswered/);
 
   // linking to it explicitly clears it
-  const answer = run(BUS, ['post', 'sonda', '01', '--from', 'humano', '--to', 'piloto', '--meta', `{"answers":"${id}"}`, '--kind', 'status', 'B'], { env });
+  const answer = run(BUS, ['post', 'sonda', '01', '--from', 'human', '--to', 'pilot', '--meta', `{"answers":"${id}"}`, '--kind', 'status', 'B'], { env });
   assert.equal(answer.status, 0, answer.stderr);
   res = run(CHECK, ['sonda', '01'], { env });
   assert.equal(res.status, 0);
@@ -93,7 +93,7 @@ test('lint: accepted guardrail with no reason fails', () => {
   const { T, env } = makeRepoWithTask();
   const dagSet = run(DAG, ['set', 'sonda', '01'], {
     env,
-    input: JSON.stringify({ nodes: [{ id: 'n1', titulo: 'x', status: 'concluida', tags: [], guardrails: [{ id: 'cod-deps-minimas', status: 'aceito' }] }] }),
+    input: JSON.stringify({ nodes: [{ id: 'n1', title: 'x', status: 'done', tags: [], guardrails: [{ id: 'code-minimal-deps', status: 'accepted' }] }] }),
   });
   assert.equal(dagSet.status, 0, dagSet.stderr);
 
@@ -109,7 +109,7 @@ test('lint: accepted guardrail with a reason not echoed in the journal fails; ec
   const dagSet = run(DAG, ['set', 'sonda', '01'], {
     env,
     input: JSON.stringify({
-      nodes: [{ id: 'n1', titulo: 'x', status: 'concluida', tags: [], guardrails: [{ id: 'cod-deps-minimas', status: 'aceito', nota: 'aceito: low risk here' }] }],
+      nodes: [{ id: 'n1', title: 'x', status: 'done', tags: [], guardrails: [{ id: 'code-minimal-deps', status: 'accepted', note: 'accepted: low risk here' }] }],
     }),
   });
   assert.equal(dagSet.status, 0, dagSet.stderr);
@@ -127,7 +127,7 @@ test('lint: accepted guardrail with a reason not echoed in the journal fails; ec
 
 test('lint: artifact still identical to the template fails as a stub', () => {
   const { T, env, taskDir } = makeRepoWithTask();
-  setStatus(path.join(taskDir, 'meta.json'), 'em-andamento');
+  setStatus(path.join(taskDir, 'meta.json'), 'in-progress');
 
   const res = run(CHECK, ['sonda', '01', '--lint'], { env });
   assert.equal(res.status, 1);
@@ -140,7 +140,7 @@ test('lint: artifact still identical to the template fails as a stub', () => {
 
 test('lint: artifact naming internal engine mechanics fails jargon; allowed_jargon allows it', () => {
   const { T, env, taskDir } = makeRepoWithTask();
-  setStatus(path.join(taskDir, 'meta.json'), 'em-andamento');
+  setStatus(path.join(taskDir, 'meta.json'), 'in-progress');
   fs.writeFileSync(
     path.join(taskDir, '00-brief.md'),
     '# Statement\n\n## Objective\nSee bus.mjs for details.\n\n## Requirements\nnone\n\n## Acceptance criteria\n- it works\n\n## Target time\n30 min\n'
@@ -163,9 +163,9 @@ test('lint: artifact naming internal engine mechanics fails jargon; allowed_jarg
 
 test('hook: a task touched within the last 2 minutes gets a grace period (no block)', () => {
   const { T, env, taskDir } = makeRepoWithTask();
-  const dagSet = run(DAG, ['set', 'sonda', '01'], { env, input: JSON.stringify({ nodes: [{ id: 'n1', titulo: 'x', status: 'todo', tags: [] }] }) });
+  const dagSet = run(DAG, ['set', 'sonda', '01'], { env, input: JSON.stringify({ nodes: [{ id: 'n1', title: 'x', status: 'todo', tags: [] }] }) });
   assert.equal(dagSet.status, 0, dagSet.stderr);
-  setStatus(path.join(taskDir, 'meta.json'), 'concluida'); // this write itself is the recent touch
+  setStatus(path.join(taskDir, 'meta.json'), 'done'); // this write itself is the recent touch
 
   const res = run(CHECK, ['--hook'], { env, input: JSON.stringify({ session_id: 'x', hook_event_name: 'Stop', stop_hook_active: false }) });
   assert.equal(res.status, 0);
@@ -176,9 +176,9 @@ test('hook: a task touched within the last 2 minutes gets a grace period (no blo
 
 test('hook: past the grace period, the same problem blocks with exit 2 and stderr', () => {
   const { T, env, taskDir } = makeRepoWithTask();
-  const dagSet = run(DAG, ['set', 'sonda', '01'], { env, input: JSON.stringify({ nodes: [{ id: 'n1', titulo: 'x', status: 'todo', tags: [] }] }) });
+  const dagSet = run(DAG, ['set', 'sonda', '01'], { env, input: JSON.stringify({ nodes: [{ id: 'n1', title: 'x', status: 'todo', tags: [] }] }) });
   assert.equal(dagSet.status, 0, dagSet.stderr);
-  setStatus(path.join(taskDir, 'meta.json'), 'concluida');
+  setStatus(path.join(taskDir, 'meta.json'), 'done');
   const old = new Date(Date.now() - 10 * 60 * 1000);
   for (const f of fs.readdirSync(taskDir)) fs.utimesSync(path.join(taskDir, f), old, old);
 

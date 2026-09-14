@@ -7,7 +7,7 @@
 // <task> accepts the full directory name OR just the numeric prefix ("01").
 // Writes to repos/<repo>/tasks/<task>/: messages.jsonl, logs.jsonl (on-demand).
 // Every message is born with a stable "id" (printed on `post` and on `read`).
-// A reply to a question|decision addressed to humano closes it by pointing
+// A reply to a question|decision addressed to human closes it by pointing
 // AT that id — --meta '{"answers":"<id>"}' (answered) or
 // '{"dismisses":"<id>"}' (declined) — never by just being the next message; see
 // tools/questions.mjs for the rule. A reference that doesn't resolve to an
@@ -113,24 +113,24 @@ function upsertAgent(repoDir, taskName, name, state, ts, meta) {
     if (!data || !Array.isArray(data.agents)) data = { agents: [] };
     let agent = data.agents.find((a) => a.name === name);
     if (!agent) {
-      agent = { name, role: meta?.role ?? '', created: ts, last_active: ts, status: 'executando' };
+      agent = { name, role: meta?.role ?? '', created: ts, last_active: ts, status: 'running' };
       data.agents.push(agent);
     }
     agent.last_active = ts;
     if (meta?.role) agent.role = meta.role;
-    agent.status = state === 'done' ? 'ocioso' : 'executando';
+    agent.status = state === 'done' ? 'idle' : 'running';
     agent.last_task = taskName;
     return data;
   });
 }
 
-// Which agent the status describes. The lifecycle is posted by piloto ABOUT the
-// executor (`--from piloto --to k8s-operator`), so the one that enters the registry is the
+// Which agent the status describes. The lifecycle is posted by the pilot ABOUT the
+// executor (`--from pilot --to k8s-operator`), so the one that enters the registry is the
 // recipient; an agent that posts its own status enters by itself.
 // `--meta '{"agent":"..."}'` takes precedence over both heuristics.
 function agenteDoStatus(from, to, meta) {
-  const nome = meta?.agent ?? (from === 'piloto' ? to : from);
-  return nome === 'humano' || nome === 'sala' ? null : nome;
+  const name = meta?.agent ?? (from === 'pilot' || from === 'piloto' ? to : from);
+  return ['human', 'humano', 'room', 'sala'].includes(name) ? null : name;
 }
 
 const [cmd, ...rest] = process.argv.slice(2);

@@ -39,7 +39,7 @@ const state = {
   agentDefs: {}, // .claude/agents/<name>.md → { description, resumo } (via server)
   repo: null, // slug of the selected repo
   task: null, // slug of the selected task; null = repo overview
-  tab: null, // active .md name OR panel id ("panel:sala", ...)
+  tab: null, // active .md name OR panel id ("panel:room", ...)
 };
 
 // live panels — tabs alongside the .md tabs, always present in the task
@@ -48,10 +48,10 @@ const PANELS = [
   { id: 'panel:dag', label: 'DAG' },
   { id: 'panel:diff', label: 'Diff' },
   { id: 'panel:timeline', label: 'Timeline' },
-  { id: 'panel:sala', label: 'Room' },
+  { id: 'panel:room', label: 'Room' },
   { id: 'panel:logs', label: 'Logs' },
-  { id: 'panel:custos', label: 'Costs' },
-].filter((p) => !(NO_COSTS && p.id === 'panel:custos'));
+  { id: 'panel:costs', label: 'Costs' },
+].filter((p) => !(NO_COSTS && p.id === 'panel:costs'));
 const isPanel = (tab) => PANELS.some((p) => p.id === tab);
 
 // Timeline: by default logs only come in with warn/error (the rest is noise
@@ -76,23 +76,23 @@ function saveLogFilter() {
 
 // Room: auto-scroll sticks to the bottom unless the user has scrolled up;
 // drafts and the reply box's focus survive SSE re-renders.
-let salaStick = true;
-const salaDrafts = {};
-let salaFocusKey = null;
+let roomStick = true;
+const roomDrafts = {};
+let roomFocusKey = null;
 
 const STATUS = {
   todo: { icon: '○', label: 'to do', cls: 'todo' },
-  'em-andamento': { icon: '▶', label: 'in progress', cls: 'andamento' },
-  concluida: { icon: '✓', label: 'done', cls: 'concluida' },
+  'in-progress': { icon: '▶', label: 'in progress', cls: 'running' },
+  done: { icon: '✓', label: 'done', cls: 'done' },
 };
 const st = (s) => STATUS[s] || STATUS.todo;
 
-const AGENT_STATUS = { ocioso: 'idle', executando: 'run', concluido: 'done' };
+const AGENT_STATUS = { idle: 'idle', running: 'run', done: 'done' };
 // display label for the raw agent status value (the CSS class above stays untranslated)
-const AGENT_STATUS_LABEL = { ocioso: 'idle', executando: 'running', concluido: 'done' };
+const AGENT_STATUS_LABEL = { idle: 'idle', running: 'running', done: 'done' };
 const agentStatusLabel = (s) => AGENT_STATUS_LABEL[s] || s;
 
-const ACCESS_TYPE_LABEL = { app: 'app', metricas: 'metrics', dashboard: 'dashboard', outro: 'other' };
+const ACCESS_TYPE_LABEL = { app: 'app', metrics: 'metrics', dashboard: 'dashboard', other: 'other' };
 const accessTypeLabel = (s) => ACCESS_TYPE_LABEL[s] || s;
 
 // collapse of the Repos/Tasks columns — persists under separate keys
@@ -259,7 +259,7 @@ function repoTimeHtml(repo) {
 }
 
 // --- dependencies between tasks (meta.depends_on, resolved by the server) ---
-const openDeps = (t) => (t.depends_on || []).filter((d) => !d.missing && d.status !== 'concluida');
+const openDeps = (t) => (t.depends_on || []).filter((d) => !d.missing && d.status !== 'done');
 const depNum = (slug) => (String(slug).match(/^(\d+)/) || [])[1] || slug;
 
 // discreet line at the top of the task view: "Depends on: <links>"
@@ -269,7 +269,7 @@ function renderDepsLine(task) {
   const links = deps.map((d) => {
     if (d.missing) return `<span class="dep-missing" title="task not found in the repo">${esc(d.title)}</span>`;
     const s = st(d.status);
-    const ok = d.status === 'concluida';
+    const ok = d.status === 'done';
     return `<a class="dep-link ${ok ? 'dep-ok' : 'dep-wait'}" data-task="${esc(d.slug)}" title="${esc(d.slug)}: ${s.label}">${s.icon} ${esc(d.title)}</a>`;
   });
   return `<div class="deps-line">Depends on: ${links.join('<span class="dep-sep">·</span>')}</div>`;
@@ -288,11 +288,11 @@ function wireDeps(content) {
   });
 }
 
-// tokens somados por agente a partir de costs.jsonl
+// tokens summed per agent from costs.jsonl
 function tokensByAgent(costs) {
   const m = {};
   for (const c of costs || []) {
-    const k = c.agente || '?';
+    const k = c.agent || '?';
     m[k] ||= { in: 0, out: 0, total: 0 };
     m[k].in += Number(c.tokens_in) || 0;
     m[k].out += Number(c.tokens_out) || 0;
@@ -332,7 +332,7 @@ function reconcile() {
   const task = currentTask();
   if (task) {
     const valid = task.files.some((f) => f.name === state.tab) || isPanel(state.tab);
-    if (!valid) state.tab = task.files[0]?.name ?? 'panel:sala';
+    if (!valid) state.tab = task.files[0]?.name ?? 'panel:room';
   } else {
     state.tab = null;
   }
@@ -349,8 +349,8 @@ function renderRepos() {
     .map((r) => {
       const total = r.tasks.length;
       const blocked = r.tasks.filter((t) => t.blocked).length;
-      const allDone = r.status === 'concluido' || (total > 0 && r.counts.concluida === total);
-      const dot = allDone ? 'ok' : 'andamento';
+      const allDone = r.status === 'done' || (total > 0 && r.counts.done === total);
+      const dot = allDone ? 'ok' : 'running';
       const active = r.slug === state.repo ? ' active' : '';
       const attn = r.awaiting ? ' attn' : '';
       if (collapsed.repos) {
@@ -460,7 +460,7 @@ function renderTabs() {
     let extra = '';
     let alert = '';
     let stub = '';
-    if (p.id === 'panel:sala' && task.messages?.length) extra = `<span class="minibadge">${task.messages.length}</span>`;
+    if (p.id === 'panel:room' && task.messages?.length) extra = `<span class="minibadge">${task.messages.length}</span>`;
     if (p.id === 'panel:diff') {
       const n = task.commits?.length || 0;
       if (n) extra = `<span class="minibadge">${n}</span>`;
@@ -475,7 +475,7 @@ function renderTabs() {
       if (warns) extra += `<span class="minibadge warn">⚠${warns}</span>`;
       if (errs) extra += `<span class="minibadge err">✕${errs}</span>`;
     }
-    if (p.id === 'panel:sala' && task.awaiting) alert = ' waiting'; // unanswered question to the human → amber
+    if (p.id === 'panel:room' && task.awaiting) alert = ' waiting'; // unanswered question to the human → amber
     if (p.id === 'panel:dag' && task.dag?.nodes?.length) {
       const s = dagStats(task.dag);
       extra = `<span class="minibadge${s.alert ? ' err' : ''}">${s.done}/${s.total}</span>`;
@@ -488,7 +488,7 @@ function renderTabs() {
   el.querySelectorAll('button.tab').forEach((b) => {
     b.onclick = () => {
       state.tab = b.dataset.tab;
-      if (state.tab === 'panel:sala') salaStick = true; // entering the Room sticks to the bottom
+      if (state.tab === 'panel:room') roomStick = true; // entering the Room sticks to the bottom
       saveSel();
       renderAll();
     };
@@ -497,26 +497,26 @@ function renderTabs() {
 
 // --- Room panel: timeline of the conversation between agents (and the human) ---
 // A question/decision to the human closes by an explicit LINK (tools/questions.mjs,
-// annotated server-side into m.pergunta), never by message order — so its badge and
-// its "closed by" line reflect m.pergunta.estado/.fechadaPor, not just "is there
+// annotated server-side into m.question), never by message order — so its badge and
+// its "closed by" line reflect m.question.state/.closedBy, not just "is there
 // something later".
-const PERG_LABEL = { aberta: 'open', respondida: 'answered', dispensada: 'declined' };
-function renderSala(task) {
+const QUESTION_LABEL = { open: 'open', answered: 'answered', dismissed: 'declined' };
+function renderRoom(task) {
   const msgs = task.messages || [];
   if (!msgs.length) return '<div class="panel-empty">no messages yet — the agents\' conversation shows up here</div>';
   const items = msgs.map((m, i) => {
     const kind = MSGKIND(m.kind);
-    const pergunta = m.pergunta || null;
+    const question = m.question || null;
     const key = `${state.repo}/${state.task}/${m.id || m.ts || ''}#${i}`;
     const stateBadge =
       m.kind === 'status' && m.meta?.state ? `<span class="msg-state">${esc(m.meta.state)}</span>` : '';
-    let pergBlock = '';
-    if (pergunta) {
-      const badge = `<span class="perg-badge perg-${pergunta.estado}">${PERG_LABEL[pergunta.estado] || pergunta.estado}</span>`;
-      if (pergunta.estado === 'aberta') {
+    let qBlock = '';
+    if (question) {
+      const badge = `<span class="q-badge q-${question.state}">${QUESTION_LABEL[question.state] || question.state}</span>`;
+      if (question.state === 'open') {
         // The static page doesn't write to the bus: the pending item becomes a
         // record, with no reply box at all.
-        pergBlock = STATIC
+        qBlock = STATIC
           ? `${badge}<div class="reply-static">awaiting reply</div>`
           : `${badge}<form class="reply" data-to="${esc(m.from)}" data-kind="${m.kind === 'question' ? 'report' : 'decision'}" data-msg-id="${esc(m.id || '')}">
               <input class="reply-input" data-key="${esc(key)}" placeholder="reply to ${esc(m.from)}…" autocomplete="off" />
@@ -524,56 +524,56 @@ function renderSala(task) {
               <button type="button" class="reply-dismiss">don't answer</button>
               <span class="reply-err"></span></form>`;
       } else {
-        const closer = pergunta.fechadaPor;
-        pergBlock = `${badge}${
+        const closer = question.closedBy;
+        qBlock = `${badge}${
           closer
-            ? `<div class="perg-closed-by"><span class="msg-ts">${shortTs(closer.ts)}</span> ${esc(closer.from)}: ${esc(closer.body)}</div>`
+            ? `<div class="q-closed-by"><span class="msg-ts">${shortTs(closer.ts)}</span> ${esc(closer.from)}: ${esc(closer.body)}</div>`
             : ''
         }`;
       }
     }
-    return `<div class="msg kind-${kind}${pergunta ? ' ask' : ''}">
+    return `<div class="msg kind-${kind}${question ? ' ask' : ''}">
       <div class="msg-head"><span class="msg-ts" title="${esc(m.ts || '')}">${shortTs(m.ts)}</span>
         <span class="msg-route">${esc(m.from || '?')} → ${esc(m.to || '?')}</span>
         <span class="msg-kind k-${kind}">${esc(m.kind || '?')}</span>${stateBadge}</div>
-      <div class="msg-body">${esc(m.body || '')}</div>${pergBlock}</div>`;
+      <div class="msg-body">${esc(m.body || '')}</div>${qBlock}</div>`;
   });
-  return `<div class="sala">${items.join('')}</div>`;
+  return `<div class="room">${items.join('')}</div>`;
 }
 const MSGKIND = (k) => (['report', 'question', 'decision', 'approval', 'status'].includes(k) ? k : 'report');
 
 // Posts a reply to /api/bus, linked to `msgId` via meta.answers or
 // meta.dismisses — the link is what closes the question, not just posting
 // after it. On success, clears the draft and clears the submitting form's error.
-async function postSalaReply(f, { to, kind, body, msgId, link }) {
+async function postRoomReply(f, { to, kind, body, msgId, link }) {
   const err = f.querySelector('.reply-err');
   err.textContent = '';
   const meta = msgId ? { [link]: msgId } : undefined;
   const r = await fetch('/api/bus', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ repo: state.repo, task: state.task, from: 'humano', to, kind, body, meta }),
+    body: JSON.stringify({ repo: state.repo, task: state.task, from: 'human', to, kind, body, meta }),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
 }
 
-function wireSala(content) {
+function wireRoom(content) {
   if (STATIC) return; // no reply box on the shared page
   content.querySelectorAll('form.reply').forEach((f) => {
     const input = f.querySelector('.reply-input');
     const msgId = f.dataset.msgId || null;
-    if (salaDrafts[input.dataset.key]) input.value = salaDrafts[input.dataset.key];
+    if (roomDrafts[input.dataset.key]) input.value = roomDrafts[input.dataset.key];
     input.oninput = () => {
-      salaDrafts[input.dataset.key] = input.value;
+      roomDrafts[input.dataset.key] = input.value;
     };
     input.onfocus = () => {
-      salaFocusKey = input.dataset.key;
+      roomFocusKey = input.dataset.key;
     };
     input.onblur = () => {
-      if (salaFocusKey === input.dataset.key) salaFocusKey = null;
+      if (roomFocusKey === input.dataset.key) roomFocusKey = null;
     };
-    if (salaFocusKey === input.dataset.key) {
+    if (roomFocusKey === input.dataset.key) {
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
     }
@@ -584,10 +584,10 @@ function wireSala(content) {
       const btns = f.querySelectorAll('button');
       btns.forEach((b) => (b.disabled = true));
       try {
-        await postSalaReply(f, { to: f.dataset.to, kind: f.dataset.kind, body, msgId, link: 'answers' });
+        await postRoomReply(f, { to: f.dataset.to, kind: f.dataset.kind, body, msgId, link: 'answers' });
         input.value = '';
-        delete salaDrafts[input.dataset.key];
-        salaStick = true; // the reply arrives via SSE — scroll to it
+        delete roomDrafts[input.dataset.key];
+        roomStick = true; // the reply arrives via SSE — scroll to it
       } catch (e2) {
         f.querySelector('.reply-err').textContent = e2.message;
       }
@@ -602,10 +602,10 @@ function wireSala(content) {
         const btns = f.querySelectorAll('button');
         btns.forEach((b) => (b.disabled = true));
         try {
-          await postSalaReply(f, { to: f.dataset.to, kind: 'status', body, msgId, link: 'dismisses' });
+          await postRoomReply(f, { to: f.dataset.to, kind: 'status', body, msgId, link: 'dismisses' });
           input.value = '';
-          delete salaDrafts[input.dataset.key];
-          salaStick = true;
+          delete roomDrafts[input.dataset.key];
+          roomStick = true;
         } catch (e2) {
           f.querySelector('.reply-err').textContent = e2.message;
         }
@@ -622,9 +622,9 @@ let agentSheet = null; // name of the agent whose sheet is open — survives SSE
 // agents with activity on the task: last_task = current task, or presence in its costs/messages
 function agentsInTask(repo, task) {
   const names = new Set();
-  for (const c of task.costs || []) if (c.agente) names.add(c.agente);
+  for (const c of task.costs || []) if (c.agent) names.add(c.agent);
   // "dag" is not an agent: it's the synthetic origin of node transitions on the bus
-  for (const m of task.messages || []) if (m.from && m.from !== 'humano' && m.from !== 'dag') names.add(m.from);
+  for (const m of task.messages || []) if (m.from && m.from !== 'human' && m.from !== 'dag') names.add(m.from);
   for (const a of repo?.agents || []) if (a.last_task === task.slug) names.add(a.name);
   for (const a of task.agents || []) names.add(a.name); // legacy — task's agents.json
   return [...names];
@@ -637,7 +637,7 @@ function renderRoster(repo) {
   const byRepo = tokensByAgent((repo.tasks || []).flatMap((t) => t.costs || []));
   const bySlug = new Map((repo.tasks || []).map((t) => [t.slug, t]));
   const cards = agents.map((a) => {
-    const s = a.status || 'ocioso';
+    const s = a.status || 'idle';
     const cls = AGENT_STATUS[s] || 'idle';
     const desc = a.role || state.agentDefs?.[a.name]?.description || '';
     const tok = byRepo[a.name]?.total || 0;
@@ -660,7 +660,7 @@ function renderAgentStrip(repo, task) {
   const byName = new Map([...(task.agents || []), ...(repo?.agents || [])].map((a) => [a.name, a]));
   const chips = names.map((n) => {
     const a = byName.get(n) || {};
-    const s = a.status || 'ocioso';
+    const s = a.status || 'idle';
     const cls = AGENT_STATUS[s] || 'idle';
     return `<button class="agent-chip" data-agent="${esc(n)}" title="${esc(n)}: ${esc(agentStatusLabel(s))} — open sheet">
       <span class="adot ${cls}"></span>${esc(n)}</button>`;
@@ -696,11 +696,11 @@ function renderSheet() {
     (repo.agents || []).find((a) => a.name === name) ||
     (task?.agents || []).find((a) => a.name === name) ||
     null;
-  const s = bus?.status || 'ocioso';
+  const s = bus?.status || 'idle';
   const cls = AGENT_STATUS[s] || 'idle';
   const bySlug = new Map((repo.tasks || []).map((t) => [t.slug, t]));
   const acted = (repo.tasks || []).filter(
-    (t) => (t.costs || []).some((c) => c.agente === name) || (t.messages || []).some((m) => m.from === name)
+    (t) => (t.costs || []).some((c) => c.agent === name) || (t.messages || []).some((m) => m.from === name)
   );
   const tokTask = task ? tokensByAgent(task.costs)[name]?.total || 0 : 0;
   const tokRepo = tokensByAgent((repo.tasks || []).flatMap((t) => t.costs || []))[name]?.total || 0;
@@ -821,7 +821,7 @@ function wireLogs(content) {
 }
 
 // --- Costs panel: tokens in/out/total per agent + task total ---
-function renderCustos(task) {
+function renderCosts(task) {
   const by = tokensByAgent(task.costs);
   const names = Object.keys(by).sort((a, b) => by[b].total - by[a].total);
   if (!names.length) return '<div class="panel-empty">no costs recorded yet</div>';
@@ -967,7 +967,7 @@ function wireDiff(content) {
 // bus (messages), logs (default: only warn/error), workspace commits, journal
 // lines with a recognizable time, and DAG node transitions (messages with from="dag").
 const TL_ICON = { bus: '●', dag: '▣', log: '◦', commit: '⎇', journal: '✎' };
-const TL_ORIGEM = { bus: 'message', dag: 'DAG', log: 'log', commit: 'commit', journal: 'journal' };
+const TL_ORIGIN = { bus: 'message', dag: 'DAG', log: 'log', commit: 'commit', journal: 'journal' };
 const TL_GAP = 5 * MIN; // above this, a separator shows the time gap
 
 // journal lines with a time: "- 16:03 — text" or "**16:03** — text".
@@ -998,7 +998,7 @@ function timelineItems(task) {
     const at = Date.parse(m.ts);
     if (isNaN(at)) continue;
     if (m.from === 'dag' && m.meta?.node) {
-      items.push({ at, origin: 'dag', text: m.body || `${m.meta.node} → ${m.meta.para}`, tag: m.meta.para });
+      items.push({ at, origin: 'dag', text: m.body || `${m.meta.node} → ${m.meta.to}`, tag: m.meta.to });
     } else {
       items.push({ at, origin: 'bus', kind: MSGKIND(m.kind), who: `${m.from || '?'} → ${m.to || '?'}`, text: m.body || '' });
     }
@@ -1027,7 +1027,7 @@ function tlItemHtml(it) {
   const who = it.who ? `<span class="tl-who">${esc(it.who)}</span>` : '';
   const tag =
     it.origin === 'bus' ? `<span class="tl-kind k-${it.kind}">${esc(it.kind)}</span>` : it.origin === 'dag' ? '<span class="tl-kind tl-k-dag">DAG</span>' : '';
-  return `<div class="tl-item tl-${it.origin} ${cls}" title="${esc(TL_ORIGEM[it.origin])}">
+  return `<div class="tl-item tl-${it.origin} ${cls}" title="${esc(TL_ORIGIN[it.origin])}">
     <span class="tl-time">${hora}</span><span class="tl-dot">${icon}</span>
     <span class="tl-body">${who}${tag}<span class="tl-text">${esc(it.text)}</span></span></div>`;
 }
@@ -1079,19 +1079,19 @@ function wireTimeline(content) {
 // --- DAG panel: mermaid graph + node table derived from dag.json ---
 const DAG_STATUS = {
   todo: { label: 'to do', cls: 'dag-todo', mm: 'dagtodo' },
-  executando: { label: 'running', cls: 'dag-exec', mm: 'dagexec' },
-  concluida: { label: 'done', cls: 'dag-done', mm: 'dagdone' },
-  bloqueada: { label: 'blocked', cls: 'dag-block', mm: 'dagblock' },
+  running: { label: 'running', cls: 'dag-exec', mm: 'dagexec' },
+  done: { label: 'done', cls: 'dag-done', mm: 'dagdone' },
+  blocked: { label: 'blocked', cls: 'dag-block', mm: 'dagblock' },
 };
 const dagSt = (s) => DAG_STATUS[s] || DAG_STATUS.todo;
-const GR_STATUS = ['pendente', 'pass', 'falha', 'aceito'];
-const grSt = (s) => (GR_STATUS.includes(s) ? s : 'pendente');
-const GR_ICON = { pass: '✓', falha: '✕', aceito: '~', pendente: '◦' };
+const GR_STATUS = ['pending', 'pass', 'fail', 'accepted'];
+const grSt = (s) => (GR_STATUS.includes(s) ? s : 'pending');
+const GR_ICON = { pass: '✓', fail: '✕', accepted: '~', pending: '◦' };
 // display label for the raw guardrail status value (the gr-<status> CSS class stays untranslated)
-const GR_LABEL = { pendente: 'pending', pass: 'pass', falha: 'failed', aceito: 'accepted' };
+const GR_LABEL = { pending: 'pending', pass: 'pass', fail: 'failed', accepted: 'accepted' };
 
 function dagGrCounts(nodes) {
-  const c = { pass: 0, falha: 0, aceito: 0, pendente: 0 };
+  const c = { pass: 0, fail: 0, accepted: 0, pending: 0 };
   for (const n of nodes) for (const g of n.guardrails || []) if (g) c[grSt(g.status)]++;
   return c;
 }
@@ -1099,10 +1099,10 @@ function dagGrCounts(nodes) {
 // DAG summary: node progress + guardrails; alert = an open, unaccepted failure
 function dagStats(dag) {
   const nodes = dag?.nodes || [];
-  const done = nodes.filter((n) => n.status === 'concluida').length;
-  const running = nodes.some((n) => n.status === 'executando');
+  const done = nodes.filter((n) => n.status === 'done').length;
+  const running = nodes.some((n) => n.status === 'running');
   const gr = dagGrCounts(nodes);
-  return { total: nodes.length, done, running, gr, alert: gr.falha > 0 };
+  return { total: nodes.length, done, running, gr, alert: gr.fail > 0 };
 }
 
 // topological order (DFS over dependencies); tolerates cycles and unknown deps
@@ -1133,8 +1133,8 @@ function dagMermaid(nodes) {
   const lines = ['flowchart TD'];
   nodes.forEach((n, i) => {
     const g = dagGrCounts([n]);
-    const badge = (n.guardrails || []).length ? ` ✓${g.pass} ✗${g.falha + g.aceito} ◦${g.pendente}` : '';
-    lines.push(`  d${i}["${mmEsc(n.titulo || n.id)}${badge}"]`);
+    const badge = (n.guardrails || []).length ? ` ✓${g.pass} ✗${g.fail + g.accepted} ◦${g.pending}` : '';
+    lines.push(`  d${i}["${mmEsc(n.title || n.id)}${badge}"]`);
     lines.push(`  class d${i} ${dagSt(n.status).mm}`);
   });
   for (const n of nodes)
@@ -1150,10 +1150,10 @@ function dagMermaid(nodes) {
 function renderGuardrail(g, poolBy) {
   const p = poolBy.get(g.id);
   const s = grSt(g.status);
-  const tip = [p?.verificacao, g.nota && s !== 'aceito' ? `note: ${g.nota}` : ''].filter(Boolean).join(' — ');
-  const sev = p?.severidade ? ` <span class="gr-sev">${esc(p.severidade)}</span>` : '';
-  const nota = s === 'aceito' && g.nota ? `<div class="gr-nota">${esc(g.nota)}</div>` : '';
-  return `<div class="gr-line" title="${esc(tip)}"><span class="gr-badge gr-${s}">${GR_ICON[s]} ${esc(GR_LABEL[s] || s)}</span> ${esc(p?.titulo || g.id)}${sev}${nota}</div>`;
+  const tip = [p?.verification, g.note && s !== 'accepted' ? `note: ${g.note}` : ''].filter(Boolean).join(' — ');
+  const sev = p?.severity ? ` <span class="gr-sev">${esc(p.severity)}</span>` : '';
+  const note = s === 'accepted' && g.note ? `<div class="gr-note">${esc(g.note)}</div>` : '';
+  return `<div class="gr-line" title="${esc(tip)}"><span class="gr-badge gr-${s}">${GR_ICON[s]} ${esc(GR_LABEL[s] || s)}</span> ${esc(p?.title || g.id)}${sev}${note}</div>`;
 }
 
 function renderDag(task) {
@@ -1162,32 +1162,32 @@ function renderDag(task) {
   const s = dagStats(task.dag);
   const poolBy = new Map((state.pool || []).map((g) => [g.id, g]));
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const grTotal = s.gr.pass + s.gr.falha + s.gr.aceito + s.gr.pendente;
+  const grTotal = s.gr.pass + s.gr.fail + s.gr.accepted + s.gr.pending;
   const summary = `<div class="dag-summary">
     <span class="dag-prog${s.done === s.total ? ' ok' : ''}">${s.done}/${s.total} nodes completed</span>
     ${grTotal ? `<span class="dag-gr">guardrails:
       <b class="gr-pass">✓${s.gr.pass}</b>
-      ${s.gr.falha ? `<b class="gr-falha">✕${s.gr.falha}</b>` : ''}
-      ${s.gr.aceito ? `<b class="gr-aceito">~${s.gr.aceito}</b>` : ''}
-      <b class="gr-pendente">◦${s.gr.pendente}</b></span>` : ''}
+      ${s.gr.fail ? `<b class="gr-fail">✕${s.gr.fail}</b>` : ''}
+      ${s.gr.accepted ? `<b class="gr-accepted">~${s.gr.accepted}</b>` : ''}
+      <b class="gr-pending">◦${s.gr.pending}</b></span>` : ''}
   </div>`;
   const graph = `<pre><code class="language-mermaid">${esc(dagMermaid(nodes))}</code></pre>`;
   const rows = dagTopo(nodes)
     .map((n) => {
       const d = dagSt(n.status);
-      const deps = (n.depends_on || []).map((id) => esc(byId.get(id)?.titulo || id)).join(', ') || '—';
+      const deps = (n.depends_on || []).map((id) => esc(byId.get(id)?.title || id)).join(', ') || '—';
       const grs = (n.guardrails || []).map((g) => renderGuardrail(g, poolBy)).join('') || '<span class="muted">—</span>';
-      return `<tr><td>${esc(n.titulo || n.id)}</td>
+      return `<tr><td>${esc(n.title || n.id)}</td>
         <td><span class="dag-badge ${d.cls}">${esc(d.label)}</span></td>
-        <td>${esc(n.agente || '—')}</td><td class="dag-deps">${deps}</td><td>${grs}</td></tr>`;
+        <td>${esc(n.agent || '—')}</td><td class="dag-deps">${deps}</td><td>${grs}</td></tr>`;
     })
     .join('');
   const table = `<table class="dag-table"><thead><tr><th>Node</th><th>Status</th><th>Agent</th><th>Depends on</th><th>Guardrails</th></tr></thead><tbody>${rows}</tbody></table>`;
   return `<div class="panel-wrap dag">${summary}${graph}${table}</div>`;
 }
 
-// --- world state (push model: estado.json + acessos.json written by the agents) ---
-// Each card shows "updated X ago" from its atualizado_em — push honesty:
+// --- world state (push model: state.json + access.json written by the agents) ---
+// Each card shows "updated X ago" from its updated_at — push honesty:
 // more than 30 min without an update turns amber.
 const STALE_MS = 30 * 60 * 1000;
 function ageBadge(ts) {
@@ -1219,15 +1219,15 @@ function belowMin(val, min) {
   return false;
 }
 
-function renderAcessosCard(acessos) {
-  const last = acessos.map((a) => a.registrado_em).filter(Boolean).sort().pop();
-  const rows = acessos
+function renderAccessCard(accesses) {
+  const last = accesses.map((a) => a.registered_at).filter(Boolean).sort().pop();
+  const rows = accesses
     .map(
       (a) => `<div class="acc">
-        <div class="acc-line">${accDot(a.up)}<strong>${esc(a.nome || a.url || '?')}</strong>
-          <span class="acc-type">${esc(accessTypeLabel(a.tipo || 'outro'))}</span>
+        <div class="acc-line">${accDot(a.up)}<strong>${esc(a.name || a.url || '?')}</strong>
+          <span class="acc-type">${esc(accessTypeLabel(a.type || 'other'))}</span>
           ${a.url ? `<a class="acc-url" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.url)}</a>` : ''}</div>
-        ${a.nota ? `<div class="acc-note">${esc(a.nota)}</div>` : ''}
+        ${a.note ? `<div class="acc-note">${esc(a.note)}</div>` : ''}
       </div>`
     )
     .join('');
@@ -1242,52 +1242,52 @@ function renderRuntimeCard(rt) {
           const m = /^(\d+)\/(\d+)$/.exec(String(d.ready ?? ''));
           const cls = m ? (Number(m[1]) >= Number(m[2]) && Number(m[2]) > 0 ? 'ok' : 'partial') : '';
           const rs = Number(d.restarts) || 0;
-          return `<div class="rt-row"><strong>${esc(d.nome || '?')}</strong>
+          return `<div class="rt-row"><strong>${esc(d.name || '?')}</strong>
             <span class="rt-ready ${cls}" title="ready pods">${esc(d.ready ?? '—')}</span>
             <span class="rt-meta">${rs} restart${rs === 1 ? '' : 's'}</span>
-            ${d.idade ? `<span class="rt-meta" title="age">${esc(d.idade)}</span>` : ''}</div>`;
+            ${d.age ? `<span class="rt-meta" title="age">${esc(d.age)}</span>` : ''}</div>`;
         })
         .join('')
     : '<div class="state-empty">nothing running</div>';
   const imgs =
-    Array.isArray(rt.imagens) && rt.imagens.length
-      ? `<div class="rt-images" title="images">${rt.imagens.map((i) => esc(i)).join(' · ')}</div>`
+    Array.isArray(rt.images) && rt.images.length
+      ? `<div class="rt-images" title="images">${rt.images.map((i) => esc(i)).join(' · ')}</div>`
       : '';
-  return stateCard('Runtime', rt.atualizado_em, rows + imgs);
+  return stateCard('Runtime', rt.updated_at, rows + imgs);
 }
 
-function renderAmbienteCard(amb) {
-  const minimos = amb.minimos && typeof amb.minimos === 'object' ? amb.minimos : {};
+function renderEnvironmentCard(amb) {
+  const minimums = amb.minimums && typeof amb.minimums === 'object' ? amb.minimums : {};
   const rows = Object.keys(amb)
-    .filter((k) => k !== 'minimos' && k !== 'atualizado_em' && (typeof amb[k] === 'string' || typeof amb[k] === 'number'))
+    .filter((k) => k !== 'minimums' && k !== 'updated_at' && (typeof amb[k] === 'string' || typeof amb[k] === 'number'))
     .map((k) => {
-      const min = minimos[k];
+      const min = minimums[k];
       const bad = min != null && belowMin(amb[k], min);
       const minHtml = min != null ? `<span class="env-min${bad ? ' bad' : ''}" title="required minimum">min ${esc(min)}</span>` : '';
       return `<div class="env-row"><span class="env-k">${esc(k)}</span><span class="env-val${bad ? ' bad' : ''}">${esc(amb[k])}</span>${minHtml}</div>`;
     })
     .join('');
-  return stateCard('Environment', amb.atualizado_em, rows || '<div class="state-empty">no data</div>');
+  return stateCard('Environment', amb.updated_at, rows || '<div class="state-empty">no data</div>');
 }
 
-function renderOrigemCard(o) {
+function renderOriginCard(o) {
   const up =
     typeof o.upstream === 'string' && /^https?:\/\//i.test(o.upstream)
       ? `<a class="acc-url" href="${esc(o.upstream)}" target="_blank" rel="noopener">${esc(o.upstream)}</a>`
       : o.upstream
         ? `<span class="env-val">${esc(o.upstream)}</span>`
         : '<span class="state-empty">local repo</span>';
-  const cl = o.clonado_em ? `<div class="rt-meta">cloned on ${esc(o.clonado_em)}</div>` : '';
-  return stateCard('Origin', o.atualizado_em, `<div class="env-row"><span class="env-k">upstream</span>${up}</div>${cl}`);
+  const cl = o.cloned_at ? `<div class="rt-meta">cloned on ${esc(o.cloned_at)}</div>` : '';
+  return stateCard('Origin', o.updated_at, `<div class="env-row"><span class="env-k">upstream</span>${up}</div>${cl}`);
 }
 
 function renderStateGrid(repo) {
   const cards = [];
-  if (repo.acessos?.length) cards.push(renderAcessosCard(repo.acessos));
-  const e = repo.estado || {};
+  if (repo.accesses?.length) cards.push(renderAccessCard(repo.accesses));
+  const e = repo.state || {};
   if (e.runtime && typeof e.runtime === 'object') cards.push(renderRuntimeCard(e.runtime));
-  if (e.ambiente && typeof e.ambiente === 'object') cards.push(renderAmbienteCard(e.ambiente));
-  if (e.origem && typeof e.origem === 'object') cards.push(renderOrigemCard(e.origem));
+  if (e.environment && typeof e.environment === 'object') cards.push(renderEnvironmentCard(e.environment));
+  if (e.origin && typeof e.origin === 'object') cards.push(renderOriginCard(e.origin));
   return cards.length ? `<div class="state-grid">${cards.join('')}</div>` : '';
 }
 
@@ -1298,12 +1298,12 @@ function renderProgressLine(repo) {
   const segs = [`<b>${p.tasks.done}/${p.tasks.total}</b> tasks`];
   if (p.dag?.total) segs.push(`DAG <b>${p.dag.done}/${p.dag.total}</b> nodes`);
   const g = p.gr || {};
-  if (g.pass + g.falha + g.aceito + g.pendente > 0) {
+  if (g.pass + g.fail + g.accepted + g.pending > 0) {
     segs.push(
       `checks <b class="gr-pass">${g.pass} pass</b>` +
-        (g.falha ? ` · <b class="gr-falha">${g.falha} failed</b>` : '') +
-        (g.aceito ? ` · <b class="gr-aceito">${g.aceito} accepted</b>` : '') +
-        ` · <b class="gr-pendente">${g.pendente} pending</b>`
+        (g.fail ? ` · <b class="gr-fail">${g.fail} failed</b>` : '') +
+        (g.accepted ? ` · <b class="gr-accepted">${g.accepted} accepted</b>` : '') +
+        ` · <b class="gr-pending">${g.pending} pending</b>`
     );
   }
   const tempo = repoTimeHtml(repo);
@@ -1312,7 +1312,7 @@ function renderProgressLine(repo) {
 }
 
 // Pending: questions awaiting the human + accepted risks from the tasks' reviews
-function renderPendencias(repo) {
+function renderPending(repo) {
   const waits = (repo.tasks || []).filter((t) => t.awaiting);
   const risks = (repo.tasks || []).flatMap((t) => (t.risks || []).map((r) => ({ t, r })));
   if (!waits.length && !risks.length) return '';
@@ -1321,7 +1321,7 @@ function renderPendencias(repo) {
     const q = (t.awaitingMsgs || [])[0];
     const preview = q?.body ? ` <span class="pend-preview">— “${esc(truncWord(q.body, 90))}”</span>` : '';
     parts.push(
-      `<div class="pend pend-wait"><a data-sala="${esc(t.slug)}" title="open ${esc(t.slug)}'s Room">✋ ${esc(t.title)}: ${t.awaiting} question${t.awaiting === 1 ? '' : 's'} awaiting you</a>${preview}</div>`
+      `<div class="pend pend-wait"><a data-room="${esc(t.slug)}" title="open ${esc(t.slug)}'s Room">✋ ${esc(t.title)}: ${t.awaiting} question${t.awaiting === 1 ? '' : 's'} awaiting you</a>${preview}</div>`
     );
   }
   for (const { t, r } of risks)
@@ -1333,15 +1333,15 @@ function renderPendencias(repo) {
 
 // compact access line in the task view (next to the breadcrumb)
 function renderAccessChips(repo) {
-  const acessos = repo?.acessos || [];
-  if (!acessos.length) return '';
-  return `<span class="crumb-access">${acessos
+  const accesses = repo?.accesses || [];
+  if (!accesses.length) return '';
+  return `<span class="crumb-access">${accesses
     .map(
       (a) =>
         `<span class="acc-mini">${accDot(a.up)}${
           a.url
-            ? `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc([a.url, a.nota].filter(Boolean).join(' — '))}">${esc(a.nome || a.url)}</a>`
-            : esc(a.nome || '')
+            ? `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc([a.url, a.note].filter(Boolean).join(' — '))}">${esc(a.name || a.url)}</a>`
+            : esc(a.name || '')
         }</span>`
     )
     .join('')}</span>`;
@@ -1398,7 +1398,7 @@ function renderRepoOverview(repo) {
     parts.push('<p class="muted">No tasks in this repo yet.</p>');
   }
 
-  parts.push(renderPendencias(repo)); // questions awaiting you + accepted risks from the reviews
+  parts.push(renderPending(repo)); // questions awaiting you + accepted risks from the reviews
   parts.push(renderRoster(repo)); // full roster of the repo's agents (cards → sheet)
 
   if (repo.context) parts.push(`<hr class="sep" />${marked.parse(repo.context)}`);
@@ -1454,11 +1454,11 @@ async function renderContent() {
       };
     });
     // "awaiting you" pending item → the originating task's Room
-    content.querySelectorAll('[data-sala]').forEach((a) => {
+    content.querySelectorAll('[data-room]').forEach((a) => {
       a.onclick = () => {
-        state.task = a.dataset.sala;
-        state.tab = 'panel:sala';
-        salaStick = true;
+        state.task = a.dataset.room;
+        state.tab = 'panel:room';
+        roomStick = true;
         reconcile();
         saveSel();
         renderAll();
@@ -1474,11 +1474,11 @@ async function renderContent() {
     wireAgentClicks(content);
     wireDeps(content);
   };
-  if (state.tab === 'panel:sala') {
-    content.innerHTML = pre + renderSala(task);
+  if (state.tab === 'panel:room') {
+    content.innerHTML = pre + renderRoom(task);
     wireTop();
-    wireSala(content);
-    content.scrollTop = salaStick ? content.scrollHeight : scrollPos;
+    wireRoom(content);
+    content.scrollTop = roomStick ? content.scrollHeight : scrollPos;
     return;
   }
   if (state.tab === 'panel:dag') {
@@ -1493,8 +1493,8 @@ async function renderContent() {
   } else if (state.tab === 'panel:logs') {
     content.innerHTML = pre + renderLogs(task);
     wireLogs(content);
-  } else if (state.tab === 'panel:custos') {
-    content.innerHTML = pre + renderCustos(task);
+  } else if (state.tab === 'panel:costs') {
+    content.innerHTML = pre + renderCosts(task);
   } else if (!task.files.length) {
     content.innerHTML = pre + '<div class="empty"><p>task with no files yet — the statement shows up here as soon as it exists</p></div>';
   } else {
@@ -1576,8 +1576,8 @@ function renderHeader() {
         if (!hit) return;
         state.repo = hit.r.slug;
         state.task = hit.t.slug;
-        state.tab = 'panel:sala';
-        salaStick = true;
+        state.tab = 'panel:room';
+        roomStick = true;
         reconcile();
         saveSel();
         renderAll();
@@ -1709,9 +1709,9 @@ document.addEventListener('keydown', (e) => {
 
 // Room: if the user scrolls up, auto-scroll releases; near the bottom, it sticks again
 $('#content').addEventListener('scroll', () => {
-  if (state.tab !== 'panel:sala') return;
+  if (state.tab !== 'panel:room') return;
   const c = $('#content');
-  salaStick = c.scrollTop + c.clientHeight >= c.scrollHeight - 40;
+  roomStick = c.scrollTop + c.clientHeight >= c.scrollHeight - 40;
 });
 
 // Shared page: a single repo — the repos column serves no purpose, and the

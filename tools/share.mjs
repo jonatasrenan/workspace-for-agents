@@ -17,7 +17,7 @@
 // an active share changes — the agent never deploys manually.
 //
 // Registry: .shares.json at the root (outside git):
-//   { "shares": { "<repo>": { uuid, url, auto, custos, publicado_em } } }
+//   { "shares": { "<repo>": { uuid, url, auto, costs, published_at } } }
 //
 // Deliberately NOT using tools/root.mjs here: this script also reads the
 // viewer's own assets (viewer/public/*) from the same tree it computes ROOT
@@ -185,11 +185,11 @@ const agentNames = new Set();
 for (const a of repo.agents || []) if (a?.name) agentNames.add(a.name);
 for (const t of repo.tasks || []) {
   for (const a of t.agents || []) if (a?.name) agentNames.add(a.name);
-  for (const c of t.costs || []) if (c?.agente) agentNames.add(c.agente);
+  for (const c of t.costs || []) if (c?.agent) agentNames.add(c.agent);
   for (const m of t.messages || []) {
-    for (const who of [m?.from, m?.to]) if (who && who !== 'humano' && who !== 'dag') agentNames.add(who);
+    for (const who of [m?.from, m?.to]) if (who && who !== 'human' && who !== 'dag') agentNames.add(who);
   }
-  for (const n of t.dag?.nodes || []) if (n?.agente) agentNames.add(n.agente);
+  for (const n of t.dag?.nodes || []) if (n?.agent) agentNames.add(n.agent);
 }
 const agentDefs = {};
 for (const [name, def] of Object.entries(full.agentDefs || {})) if (agentNames.has(name)) agentDefs[name] = def;
@@ -227,21 +227,21 @@ const scrubStr = (s) => outros.reduce((acc, o) => acc.split(o).join(OUTRO), s);
 // A state item that isn't from this repo: identified by another repo, or living in
 // another namespace ("kube-system/metrics-server") — the page shows the repo's own
 // runtime, not the inventory of the machine it runs on.
-const isAlheio = (v, inEstado) => {
+const isAlheio = (v, inState) => {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
-  const id = [v.nome, v.name, v.slug, v.deployment, v.servico].find((x) => typeof x === 'string')?.trim();
+  const id = [v.name, v.slug, v.deployment, v.service].find((x) => typeof x === 'string')?.trim();
   if (id == null) return false;
   if (outros.includes(id)) return true;
-  return inEstado && id.includes('/') && id.split('/')[0] !== slug;
+  return inState && id.includes('/') && id.split('/')[0] !== slug;
 };
-function scrub(v, inEstado = false) {
+function scrub(v, inState = false) {
   if (typeof v === 'string') return scrubStr(v);
-  if (Array.isArray(v)) return v.filter((x) => !isAlheio(x, inEstado)).map((x) => scrub(x, inEstado));
+  if (Array.isArray(v)) return v.filter((x) => !isAlheio(x, inState)).map((x) => scrub(x, inState));
   if (v && typeof v === 'object') {
     const out = {};
     for (const [k, val] of Object.entries(v)) {
       if (outros.includes(k)) continue; // collection indexed by repo: the foreign key goes out whole
-      out[scrubStr(k)] = scrub(val, inEstado || k === 'estado' || k === 'acessos');
+      out[scrubStr(k)] = scrub(val, inState || k === 'state' || k === 'accesses');
     }
     return out;
   }
@@ -341,7 +341,7 @@ try {
   process.exit(1);
 }
 
-shares[slug] = { uuid, url, auto: true, custos: !noCosts, publicado_em: buildAt };
+shares[slug] = { uuid, url, auto: true, costs: !noCosts, published_at: buildAt };
 writeShares(shares);
 log(`✅ ${url}`);
 process.exit(0);

@@ -60,7 +60,7 @@ fs.mkdirSync(path.join(repoDir, 'tasks'), { recursive: true });
 fs.writeFileSync(
   path.join(repoDir, 'meta.json'),
   JSON.stringify(
-    { title, stack: [], status: 'em-andamento', created: today, updated: today, workspace: `workspace/${slug}` },
+    { title, stack: [], status: 'in-progress', created: today, updated: today, workspace: `workspace/${slug}` },
     null,
     2
   ) + '\n'
