@@ -1,13 +1,8 @@
 # Workspace for Agents — subagent orchestration studio
 
-Harness for conducting technical work by delegating to a team of AI subagents. Each challenge becomes a **repo**, each repo has **tasks**, each task has a **DAG** of subtasks with guardrails — and all the collaboration (messages, logs, costs, commits, diffs) stays visible in a live panel. The example challenges run on Docker + minikube, but nothing in the engine depends on that.
+Harness for conducting technical work by delegating to a team of AI subagents. Each project becomes a **repo**, each repo has **tasks**, each task has a **DAG** of subtasks with guardrails — and all the collaboration (messages, logs, costs, commits, diffs) stays visible in a live panel. The example projects run on Docker + minikube, but nothing in the engine depends on that.
 
-What the studio exercises — and the ruler of each task's retrospective:
-
-1. **Problem decomposition** — breaking it into attackable parts, with order and a definition of done.
-2. **Tool choice / delegation to AI** — what goes to the agents (and with what instruction) vs what stays hands-on.
-3. **AI as a speed lever** — parallelism, short iteration, not waiting on what can be delegated.
-4. **Decision making** — cutting scope, choosing trade-offs, and correcting course when reality changes the plan.
+Each task closes with a retrospective in `30-review.md` that looks at the execution through four lenses — problem decomposition, delegation and tool choice, pace and parallelism, decisions and scope cuts (the full ruler for each lens lives in the `retrospectiva` skill).
 
 ## Studio model
 
@@ -19,11 +14,11 @@ The user talks in natural language — they **don't** know or need to call tools
 
 | What the user says | What you do |
 |---|---|
-| "new challenge/repo about X" | `node tools/new-repo.mjs "<Title>"` → fill in `00-contexto.md` |
+| "new project/repo about X" | `node tools/new-repo.mjs "<Title>"` → fill in `00-contexto.md` |
 | "new task: Y" | `node tools/new-task.mjs <repo> "<Title>"` → fill in `00-enunciado.md`; if the request **already specifies** the task's content, chain it in the same turn: plan + DAG → dispatch agents |
 | "clone X, deploy it, and solve problem Y" (a plural/decomposable request) | repo + **tasks 01 (deploy) and 02 (problem, `--depends-on` 01) created together** — full roadmap visible in the panel before executing any of them — and chained execution, task by task |
 | "let's work on task X" | **execution mode**: plan first (decomposition + what to delegate in `10-plano.md`), then execute by delegating to subagents, `20-journal.md` updated in real time — the human follows along in the Room/Agents/Logs/Costs panels |
-| "how did I do?" / "close this task" | retrospective in `30-review.md` against the 4 criteria, with evidence from the journal |
+| "close this task" / "task retrospective" | retrospective in `30-review.md` through the 4 lenses, with evidence from the journal |
 
 ## The workspace in operation
 
@@ -47,7 +42,7 @@ The user talks in natural language — they **don't** know or need to call tools
 - **Never ask permission to continue the flow**: a closed phase → the next phase in the same turn. Confirmation is only for a real decision still open; progress is announced, not requested. When the user's request **already contains the specification** of the next phase (e.g., "create a deploy task with probe validation" already says what the task is), the phases chain in the same turn: create → detailed statement → plan + DAG → dispatch agents — stop only if a real decision comes up that only the human can make. Every question to the user comes with a **recommended default**: the user only steps in when they disagree.
 - **Persist early and in a parallel block**: after every substantive exchange (plan closed, part finished, decision made), update the task's files. Independent writes from the same round go out in a single block of parallel tool calls. The user follows along on the viewer in real time.
 - **Journal with timestamps**: every relevant event (decision, delegation, result, course correction) becomes an `HH:MM — event` line in `20-journal.md`, at the moment it happens — not reconstructed afterward.
-- **Artifacts in `repos/` are readable by third parties**: a straightforward design doc, in Portuguese, without naming the harness's internal mechanics (tool names, viewer, learnings) — references use the artifacts' visible names ("plan", "journal"). **No evaluation vocabulary** ("what will be observed", "score", "judgment"): requirements and acceptance criteria are written neutrally, like a design doc/work issue — the retrospective's ruler exists only in the skills (the pilot's internal use), never in artifact text.
+- **Artifacts in `repos/` are readable by third parties**: a straightforward design doc, in English, without naming the harness's internal mechanics (tool names, viewer, learnings) — references use the artifacts' visible names ("plan", "journal"). **Neutral voice**: a requirement or acceptance criterion is written the way a design doc or an issue would write it — the final state, and the command or observation that verifies it — never as an appraisal of whoever executed it. The four-lens ruler is the pilot's own instrument for the retrospective — it lives in the `retrospectiva` skill, never in artifact text.
 - **Invisible backstage — also applies to the conversation**: the pilot drives focused on the target project; the replies talk about the work (what was done, next step in natural language) and never narrate internal mechanics: don't mention skills/commands ("/refinar is available"), don't announce ties to learnings ("I tied this to learnings on purpose" — learnings silently influences content), don't describe templates or the harness. Same spirit as the rule above about artifacts, extended to the conversation.
 - Mechanical IO (repo/task skeleton) is **never** hand-typed: always through the tools.
 
@@ -73,7 +68,7 @@ workspace-for-agents/
 │       ├── 00-enunciado.md    # problem statement: objective, requirements, acceptance criteria, target time
 │       ├── 10-plano.md        # decomposition + what's delegated to AI vs done by hand
 │       ├── 20-journal.md      # timestamped execution diary
-│       └── 30-review.md       # retrospective against the 4 criteria
+│       └── 30-review.md       # retrospective through the 4 lenses
 ├── .claude/agents/            # specialized executors
 ├── .claude/skills/            # pilot flows (refinar, adversarial, retrospectiva)
 ├── guardrails/pool.json       # catalog of reusable checks

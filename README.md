@@ -2,24 +2,24 @@
 
 A studio for conducting technical work by delegating to a team of AI subagents — and watching the collaboration happen live.
 
-Each challenge becomes a **repo**; each repo has **tasks**; each task has a **DAG** of subtasks with attached guardrails. Messages between the pilot and the agents, operational logs, token cost, commits and diffs are recorded in files and rendered by a local panel that updates itself.
+Each project becomes a **repo**; each repo has **tasks**; each task has a **DAG** of subtasks with attached guardrails. Messages between the pilot and the agents, operational logs, token cost, commits and diffs are recorded in files and rendered by a local panel that updates itself.
 
 The harness is [Claude Code](https://claude.com/claude-code): `CLAUDE.md` instructs the pilot agent, and `.claude/agents/` brings the specialized executors. The tools in `tools/` are plain Node — **zero npm dependencies**, nothing to install.
 
 ## How it works
 
-- **You talk in natural language.** "New challenge about X", "let's work on task 02", "how did I do?". The pilot maps the intent to commands and drives.
+- **You talk in natural language.** "New project about X", "let's work on task 02", "close this task". The pilot maps the intent to commands and drives.
 - **The pilot never does manual grunt work.** Operating the cluster, reading logs and metrics, running tests and reviewing all go to the subagents in `.claude/agents/`; independent fronts go out in parallel.
 - **Every delegation leaves a trace.** Each agent cycle is posted to the task's bus (`spawned` → `working` → `done`) and the token cost is recorded — the panel shows the collaboration in real time.
 - **State is push.** Whoever performs an operation records the result; the viewer renders what's saved in `repos/<repo>/`. On its own it only does two things: pings the URLs already registered in Access (to show whether they're up) and reads `workspace/<repo>/`'s git history to build the Diff tab.
-- **Code stays separate.** Each challenge's code lives in `workspace/<repo>/`, its own clean git repository, outside this harness's version control.
+- **Code stays separate.** Each project's code lives in `workspace/<repo>/`, its own clean git repository, outside this harness's version control.
 
 ## Requirements
 
 - **Node.js 20.13+** (developed on 24.x). No npm dependencies. The tools in `tools/` run on Node 18, but the viewer uses recursive `fs.watch`, which on Linux only exists from 20.13 on — below that the panel still works, it just doesn't auto-refresh.
-- **git** — `new-repo.mjs` initializes each challenge's repository and the Diff tab reads the workspace's history.
+- **git** — `new-repo.mjs` initializes each project's repository and the Diff tab reads the workspace's history.
 - An agent that reads `CLAUDE.md` and `.claude/` — the project is written for Claude Code.
-- Optional, only for the example challenges: Docker and minikube (the `k8s-operator`, `log-reader` and `metrics-reader` agents operate on them). The studio's engine does not depend on Kubernetes.
+- Optional, only for the example projects: Docker and minikube (the `k8s-operator`, `log-reader` and `metrics-reader` agents operate on them). The studio's engine does not depend on Kubernetes.
 - Optional, only to publish a repo as a page: AWS CLI with access to an S3 bucket and a CloudFront distribution.
 
 ## First steps
@@ -28,11 +28,11 @@ The harness is [Claude Code](https://claude.com/claude-code): `CLAUDE.md` instru
 git clone https://github.com/jonatasrenan/workspace-for-agents.git
 cd workspace-for-agents
 
-# 1. create a challenge: repos/<slug>/ (metadata) + workspace/<slug>/ (git init)
-node tools/new-repo.mjs "My challenge"
+# 1. create a project: repos/<slug>/ (metadata) + workspace/<slug>/ (git init)
+node tools/new-repo.mjs "My project"
 
 # 2. create the first task: statement, plan, journal and review from templates
-node tools/new-task.mjs my-challenge "Initial deploy"
+node tools/new-task.mjs my-project "Initial deploy"
 
 # 3. open the panel (loopback only; PORT and HOST can be overridden via env)
 node viewer/server.mjs     # http://localhost:4500
@@ -82,8 +82,8 @@ All of them run from the project root, with no magic arguments:
 
 ```sh
 cp .env.example .env    # bucket, distribution, base URL, AWS profile and region
-node tools/share.mjs my-challenge --dry-run   # generates the HTML in a temp dir, without touching AWS
-node tools/share.mjs my-challenge             # publishes
+node tools/share.mjs my-project --dry-run   # generates the HTML in a temp dir, without touching AWS
+node tools/share.mjs my-project             # publishes
 ```
 
 Without the variables configured, the command fails saying exactly what's missing. While the share is active, the viewer republishes the page on its own on every change to the repo; `--off` pauses the republishing (the page stays up) and `--delete` takes it down — this last one also needs the AWS credentials.
@@ -103,7 +103,7 @@ workspace-for-agents/
 ├── viewer/                # local web panel (port 4500); vendor/ carries marked and mermaid
 ├── .env.example            # publishing configuration (copy to .env)
 ├── repos/<repo>/          # your state: context, tasks, bus, costs, DAG  (git-ignored)
-└── workspace/<repo>/      # each challenge's code, its own git repo      (git-ignored)
+└── workspace/<repo>/      # each project's code, its own git repo      (git-ignored)
 ```
 
 ## License

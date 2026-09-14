@@ -67,16 +67,16 @@ _(timestamped execution diary — one line per event: decision, delegation, resu
     '30-review.md',
     `# Review
 
-_(score and evidence per criterion, then what to change next time)_
+_(what happened and the evidence behind it, through each lens, then what to change next time)_
 
-## Evaluation
+## Retrospective
 
-| Criterion | Score (1-5) | Evidence |
+| Lens | What happened | Evidence |
 |---|---|---|
-| Decomposition | | |
-| Delegation and tools | | |
-| Speed with AI | | |
-| Decisions | | |
+| Problem decomposition | | |
+| Delegation and tool choice | | |
+| Pace and parallelism | | |
+| Decisions and scope cuts | | |
 
 ## What worked
 
