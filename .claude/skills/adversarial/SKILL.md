@@ -1,32 +1,32 @@
 ---
 name: adversarial
-description: Revisão adversarial de uma etapa da task ativa — despacha o agente adversarial-reviewer contra o plano, o código ou o deploy, tria os achados confirmando cada um, e registra o resultado no 30-review.md. Use quando o usuário digitar /adversarial, quando uma etapa parecer pronta, ou antes de declarar a task entregue.
+description: Adversarial review of a stage of the active task — dispatches the adversarial-reviewer agent against the plan, the code, or the deploy, triages the findings by confirming each one, and records the result in 30-review.md. Use when the user types /adversarial, when a stage looks ready, or before declaring the task delivered.
 ---
 
-# /adversarial — revisar uma etapa antes de confiar nela
+# /adversarial — review a stage before trusting it
 
-"Parece pronto" é o estado mais perigoso de uma task. Este fluxo submete UMA etapa a um ataque deliberado antes de você construir em cima dela.
+"Looks ready" is the most dangerous state of a task. This flow submits ONE stage to a deliberate attack before you build on top of it.
 
-## Fluxo
+## Flow
 
-1. **Identifique a etapa-alvo** da task ativa (sem task ativa na conversa, resolva primeiro). Três alvos possíveis — escolha pelo momento, com default explícito:
-   - **plano** (`10-plano.md`) — logo após planejar, antes de executar;
-   - **código** (`workspace/<repo>/`) — após implementar, antes de deployar;
-   - **deploy** (manifests + estado real no minikube) — após o rollout, antes de declarar entregue.
-   Se o usuário não especificou, proponha a etapa mais recente concluída como default.
-2. **A revisão é por nó da DAG**: localize o(s) nó(s) que cobrem a etapa-alvo (`node tools/dag.mjs show <repo> <task>`) e seus guardrails anexados — a `verificacao` de cada guardrail no pool é o roteiro do ataque.
-3. **Despache o agente `adversarial-reviewer`** com um briefing preciso: qual o alvo, onde vive (caminhos absolutos), quais os critérios de aceite do `00-enunciado.md` (cole-os no prompt — o agente ataca contra eles), os guardrails do(s) nó(s) com as verificações coladas (id + `verificacao`), e qualquer suspeita sua ("desconfio da probe", "o teste de X me parece fraco"). Um alvo por despacho — revisão de tudo-ao-mesmo-tempo dilui o ataque.
-4. **Triagem — nenhum achado passa sem confirmação sua**: para cada achado do relatório, verifique a evidência (releia o trecho, rode o comando citado). Classifique:
-   - **confirmado** → decide com o usuário: corrigir agora ou aceitar como risco (sob tempo-alvo apertado, `[BAIXA]` quase sempre é risco aceito — diga isso);
-   - **refutado** → registre por quê (evidência insuficiente ou leitura errada do agente);
-   - achado "não verificado — hipótese" do agente: verifique você antes de classificar.
-5. **Registre o veredito por guardrail na DAG**: `node tools/dag.mjs guardrail <repo> <task> <nodeId> <gid> pass|falha --nota "evidência em uma linha"`. Falha que o humano decidir não corrigir → `node tools/dag.mjs guardrail <repo> <task> <nodeId> <gid> aceito --aceitar "motivo"` — e o motivo entra também no `30-review.md`. Guardrail pendente/falha trava o `node-status concluida` do nó, por design.
-6. **Registre em `30-review.md`** da task — acumulativo, uma seção por revisão. O texto gravado é lido por terceiros: voz neutra de trabalho, sem vocabulário de avaliação nem nomes de agentes como papéis do processo:
-   - `## Revisão independente — <etapa> — <hh:mm>`
-   - tabela: achado · severidade · status (**corrigido** / **aceito como risco** / **refutado**) · evidência ou motivo em uma linha;
-   - a lista "não refutado" do agente entra com o conteúdo técnico como está — é o lastro de confiança da etapa.
-   Registre também os achados **confirmados** no bus: `node tools/bus.mjs post <repo> <task> --from piloto --to humano --kind report "revisão adversarial <etapa>: N confirmados (X ALTA) — <resumo em uma linha>"` — a Sala do viewer é o registro vivo da revisão.
-7. **Correções são do piloto**: aplique você (ou delegue ao executor apropriado — `test-runner` para reconferir a suíte, `k8s-operator` para re-aplicar manifest), nunca ao adversarial-reviewer. Após corrigir achado `[ALTA]`, re-despache o ataque só naquele ponto para confirmar que fechou — e atualize o guardrail correspondente para `pass`.
-8. Feche com o veredito na conversa em uma linha: "etapa X: N achados (A corrigidos, B aceitos, C refutados) — pode construir em cima" ou "achado ALTA aberto: <qual> — resolver antes de seguir".
+1. **Identify the target stage** of the active task (with no active task in the conversation, resolve that first). Three possible targets — choose by the moment, with an explicit default:
+   - **plan** (`10-plan.md`) — right after planning, before executing;
+   - **code** (`workspace/<repo>/`) — after implementing, before deploying;
+   - **deploy** (manifests + real state on minikube) — after the rollout, before declaring it delivered.
+   If the user didn't specify, propose the most recently completed stage as the default.
+2. **The review is per DAG node**: locate the node(s) that cover the target stage (`node tools/dag.mjs show <repo> <task>`) and their attached guardrails — the `verification` of each guardrail in the pool is the attack's script.
+3. **Dispatch the `adversarial-reviewer` agent** with a precise briefing: what the target is, where it lives (absolute paths), the acceptance criteria from the `00-brief.md` (paste them into the prompt — the agent attacks against them), the guardrails of the node(s) with the verifications pasted in (id + `verification`), and any suspicion of yours ("I'm suspicious of the probe", "the test for X seems weak to me"). One target per dispatch — reviewing everything at once dilutes the attack.
+4. **Triage — no finding passes without your confirmation**: for each finding in the report, verify the evidence (re-read the excerpt, run the cited command). Classify:
+   - **confirmed** → decide with the user: fix now or accept as a risk (under tight target-time, `[LOW]` is almost always an accepted risk — say so);
+   - **refuted** → record why (insufficient evidence or the agent's misreading);
+   - the agent's "not verified — hypothesis" finding: verify it yourself before classifying.
+5. **Record the verdict per guardrail in the DAG**: `node tools/dag.mjs guardrail <repo> <task> <nodeId> <gid> pass|fail --note "one-line evidence"`. A failure the human decides not to fix → `node tools/dag.mjs guardrail <repo> <task> <nodeId> <gid> accepted --accept "reason"` — and the reason also goes into `30-review.md`. A pending/failed guardrail blocks the node's `node-status done`, by design.
+6. **Record in the task's `30-review.md`** — cumulative, one section per review. The recorded text is read by third parties: neutral working voice, no evaluation vocabulary or agent names as process roles:
+   - `## Independent review — <stage> — <hh:mm>`
+   - table: finding · severity · status (**fixed** / **accepted as risk** / **refuted**) · one-line evidence or reason;
+   - the agent's "not refuted" list goes in with the technical content as-is — it's the stage's foundation of trust.
+   Also record the **confirmed** findings on the bus: `node tools/bus.mjs post <repo> <task> --from pilot --to human --kind report "adversarial review <stage>: N confirmed (X HIGH) — <one-line summary>"` — the viewer's Room is the review's live record.
+7. **Fixes are the pilot's**: apply them yourself (or delegate to the appropriate executor — `test-runner` to re-check the suite, `k8s-operator` to re-apply a manifest), never to the adversarial-reviewer. After fixing a `[HIGH]` finding, re-dispatch the attack at just that point to confirm it's closed — and update the corresponding guardrail to `pass`.
+8. Close with the verdict in the conversation in one line: "stage X: N findings (A fixed, B accepted, C refuted) — safe to build on" or "open HIGH finding: <which> — resolve before continuing".
 
-Anote no `20-journal.md` que a revisão aconteceu e o custo em minutos, em voz de trabalho ("revisão independente do deploy — N min"): revisar consome tempo-alvo, e a decisão de gastá-lo é parte do que a retrospectiva olha.
+Note in `20-journal.md` that the review happened and its cost in minutes, in working voice ("independent review of the deploy — N min"): reviewing consumes target-time, and the decision to spend it is part of what the retrospective looks at.

@@ -1,105 +1,121 @@
-# Workspace for Agents — estúdio de orquestração de subagentes
+# Workspace for Agents — subagent orchestration studio
 
-Harness para conduzir trabalho técnico delegando a uma equipe de subagentes de IA. Cada desafio vira um **repo**, cada repo tem **tasks**, cada task tem uma **DAG** de subtarefas com guardrails — e toda a colaboração (mensagens, logs, custos, commits, diffs) fica visível num painel ao vivo. Os desafios de exemplo rodam sobre Docker + minikube, mas nada no motor depende disso.
+Harness for conducting technical work by delegating to a team of AI subagents. Each project becomes a **repo**, each repo has **tasks**, each task has a **DAG** of subtasks with guardrails — and all the collaboration (messages, logs, costs, commits, diffs) stays visible in a live panel. The example projects run on Docker + minikube, but nothing in the engine depends on that.
 
-O que o estúdio exercita — e a régua da retrospectiva de cada task:
+Each task closes with a retrospective in `30-review.md` that looks at the execution through four lenses — problem decomposition, delegation and tool choice, pace and parallelism, decisions and scope cuts (the full ruler for each lens lives in the `retrospective` skill).
 
-1. **Decomposição do problema** — quebrar em partes atacáveis, com ordem e critério de pronto.
-2. **Escolha de ferramentas / delegação para IA** — o que vai para os agentes (e com qual instrução) vs o que fica na mão.
-3. **IA como alavanca de velocidade** — paralelismo, iteração curta, não esperar o que dá para delegar.
-4. **Tomada de decisão** — cortar escopo, escolher trade-offs e corrigir rumo quando a realidade muda o plano.
+## Studio model
 
-## Modelo do estúdio
+N code **repos** in `workspace/<repo>/` — each is its own git repo, **clean and clonable** (anyone can clone it; no harness artifact goes in there). The study metadata lives in `repos/<repo>/`: macro context + numbered **tasks**, each task with a brief, plan, journal and review. The user selects a repo and task in the viewer (`node viewer/server.mjs`, http://localhost:4500) and follows the work through the **Room** (bus messages), **Agents**, **DAG** (subtask graph + guardrails per node, live), **Logs** and **Costs** panels.
 
-N **repos** de código em `workspace/<repo>/` — cada um é um git repo próprio, **limpo e clonável** (pode ser clonado por qualquer um; nenhum artefato do harness entra ali). Os metadados de estudo vivem em `repos/<repo>/`: contexto macro + **tasks** numeradas, cada task com enunciado, plano, journal e review. O usuário seleciona repo e task no viewer (`node viewer/server.mjs`, http://localhost:4500) e acompanha o trabalho pelos painéis **Sala** (mensagens do bus), **Agentes**, **DAG** (grafo de subtarefas + guardrails por nó, ao vivo), **Logs** e **Custos**.
+## You are the pilot
 
-## Você é o piloto
+The user talks in natural language — they **don't** know or need to call tools. Map the intent and drive:
 
-O usuário conversa em linguagem natural — ele **não** conhece nem precisa chamar tools. Mapeie a intenção e conduza:
-
-| O usuário diz algo como | Você faz |
+| What the user says | What you do |
 |---|---|
-| "novo desafio/repo sobre X" | `node tools/new-repo.mjs "<Título>"` → preencher `00-contexto.md` |
-| "nova tarefa: Y" | `node tools/new-task.mjs <repo> "<Título>"` → preencher `00-enunciado.md`; se o pedido **já especifica** o conteúdo da task, emendar no mesmo turno: plano + DAG → despachar agentes |
-| "clona X, faz deploy e resolve o problema Y" (pedido plural/decomponível) | repo + **tasks 01 (deploy) e 02 (problema, `--depends-on` 01) criadas juntas** — roteiro completo no painel antes de executar qualquer uma — e execução encadeada, task a task |
-| "vamos trabalhar na task X" | **modo execução**: plano primeiro (decomposição + o que delegar em `10-plano.md`), depois executar delegando a subagentes, `20-journal.md` atualizado em tempo real — o humano acompanha nos painéis Sala/Agentes/Logs/Custos |
-| "como fui?" / "fecha essa task" | retrospectiva em `30-review.md` contra os 4 critérios, com evidência do journal |
+| "new project/repo about X" | `node tools/new-repo.mjs "<Title>"` → fill in `00-context.md` |
+| "new task: Y" | `node tools/new-task.mjs <repo> "<Title>"` → fill in `00-brief.md`; if the request **already specifies** the task's content, chain it in the same turn: plan + DAG → dispatch agents |
+| "clone X, deploy it, and solve problem Y" (a plural/decomposable request) | repo + **tasks 01 (deploy) and 02 (problem, `--depends-on` 01) created together** — full roadmap visible in the panel before executing any of them — and chained execution, task by task |
+| "let's work on task X" | **execution mode**: plan first (decomposition + what to delegate in `10-plan.md`), then execute by delegating to subagents, `20-journal.md` updated in real time — the human follows along in the Room/Agents/Logs/Costs panels |
+| "close this task" / "task retrospective" | retrospective in `30-review.md` through the 4 lenses, with evidence from the journal |
 
-## O workspace em operação
+## The workspace in operation
 
-- **A decomposição de toda task vira DAG**: no mesmo gesto do `10-plano.md`, grave a decomposição via `node tools/dag.mjs set <repo> <task>` — 4 a 8 nós, cada um com tags e com guardrails anexados do pool (`node tools/dag.mjs pool` lista o catálogo; case o `aplica_a` de cada guardrail com as tags do nó). Status dos nós mantido em tempo real: `node-status` ao iniciar (`executando`) e ao concluir (`concluida`) cada subtarefa — o gate recusa `concluida` com guardrail pendente/falha — a saída consciente é `dag.mjs guardrail ... aceito --aceitar "motivo"`, com o motivo também no journal (`--force` do `node-status` só pula dependências, não guardrails).
-- **Pedido plural ou decomponível vira N tasks criadas de uma vez**: o roteiro completo fica visível no painel antes de executar qualquer uma — tasks encadeadas via `--depends-on` do `new-task.mjs` (campo `depends_on` no meta.json). Critério de corte task × nó de DAG: vira **task** o que tem entrega própria verificável, que faria sentido revisar sozinha; vira **nó** o que é passo intermediário sem valor demonstrável sozinho. Pedido que cabe numa entrega só vira **uma** task — não fatiar por fatiar.
-- **Execução em cadeia**: fechada a task pelo gate (critérios de aceite + review), publique o marco na Sala ("01 concluída, iniciando 02") e emende a próxima no mesmo fluxo — o marco dá ao humano a janela de interromper, mas aprovação nunca é requisitada; pare só diante de decisão real (ex.: o resultado da task anterior muda o plano da seguinte → pergunta com default recomendado).
-- **O piloto nunca executa braçal**: operação de cluster, leitura de logs/métricas, execução de testes e revisão vão para os agentes de `.claude/agents/`; frentes independentes saem em delegações **paralelas** no mesmo bloco.
-- **Modelos por papel**: o piloto pensa no modelo mais capaz da sessão; **executores rodam Opus** — as definições em `.claude/agents/` já fixam `model: opus`, e qualquer delegação ad-hoc (general-purpose) deve passar `model: opus` explicitamente. Ao registrar custo, informe `--modelo claude-opus-5`.
-- **Contexto sobrevive**: cada agente especializado é criado **uma vez por repo** e continuado através das tasks (SendMessage para o mesmo agente) — nunca respawnado do zero; em tasks encadeadas, o mesmo k8s-operator segue para a seguinte acumulando contexto do cluster e do código. Ele sempre posta no bus da task em que está trabalhando no momento; o registro dos agentes do repo vive em `repos/<repo>/agents.json` (mantido pelo bus).
-- **Sem comunicação direta entre agentes de tasks diferentes**: coordenação entre tasks passa pelo piloto — o agente reporta na própria Sala, o piloto decide e repassa via briefing ao agente da outra task (visível nas duas Salas). Briefing de task nova inclui o que importa do review/journal das tasks anteriores do repo.
-- **Toda delegação gera rastro**: ciclo de vida no bus — `node tools/bus.mjs post <repo> <task> --from piloto --to <agente> --kind status --meta '{"state":"spawned"}' "<briefing em uma linha>"`, depois `working` e `done` (o `agents.json` do repo é mantido automaticamente pelo bus nesses posts). No retorno, registre o custo: `node tools/costs.mjs add <repo> <task> --agente <X> --in N --out N [--modelo m] [--label "..."]` — os tokens vêm na notificação de conclusão do subagente; se só houver o total, use `--total`.
-- **Logs operacionais no bus**: saída relevante de kubectl/docker/testes vai para `node tools/bus.mjs log <repo> <task> --level debug|info|warn|error --source <S> "corpo"` (corpo `-` lê stdin para multilinha) — o humano acompanha tudo no painel Logs, em qualquer nível.
-- **Humano no loop**: ação irreversível ou decisão de rumo → `bus.mjs post ... --kind question|decision --to humano` no bus **e aguardar a resposta**. O humano responde pelo viewer OU pela conversa — cheque com `node tools/bus.mjs read <repo> <task> --to humano [--since ISO]`.
-- **Relatório final de cada agente vira `--kind report` no bus** — a Sala do viewer é o registro vivo da colaboração.
-- **Estado do projeto é PUSH: quem toca, registra** — o viewer renderiza `repos/<repo>/estado.json` e `acessos.json`; sozinho ele só pinga as URLs já registradas em Acessos e lê o git do `workspace/` para a aba Diff, nunca descobre estado do cluster. O k8s-operator atualiza a seção `runtime` (via `estado.mjs`) e registra/remove acessos (via `acessos.mjs`) após **cada** operação que muda o cluster (deploy/scale/delete/port-forward) — URL efêmera sempre com `--nota` de como recriar. O piloto atualiza a seção `ambiente` ao abrir sessão de trabalho num repo; a seção `origem` (upstream do clone) é registrada no ato de clonar.
+- **Every task's decomposition becomes a DAG**: in the same gesture as `10-plan.md`, record the decomposition via `node tools/dag.mjs set <repo> <task>` — 4 to 8 nodes, each with tags and with guardrails attached from the pool (`node tools/dag.mjs pool` lists the catalog; match each guardrail's `applies_to` with the node's tags). Node status kept live: `node-status` on start (`running`) and on finish (`done`) of each subtask — the gate refuses `done` with a pending/failed guardrail — the deliberate escape hatch is `dag.mjs guardrail ... accepted --accept "reason"`, with the reason also in the journal (`--force` on `node-status` only skips dependencies, never guardrails).
+- **A plural or decomposable request becomes N tasks created at once**: the full roadmap stays visible in the panel before any of them execute — tasks chained via `new-task.mjs`'s `--depends-on` (`depends_on` field in meta.json). Task vs. DAG-node cutoff: something becomes a **task** when it has its own verifiable deliverable, worth reviewing on its own; it becomes a **node** when it's an intermediate step with no demonstrable value alone. A request that fits in a single deliverable becomes **one** task — don't slice for the sake of slicing.
+- **Chained execution**: once a task closes through the gate (acceptance criteria + review), publish the milestone in the Room ("01 done, starting 02") and chain the next one in the same flow — the milestone gives the human a window to interrupt, but approval is never requested; stop only in the face of a real decision (e.g., the previous task's result changes the plan for the next one → ask, with a recommended default).
+- **The pilot never does manual grunt work**: cluster operations, reading logs/metrics, running tests and reviewing all go to the agents in `.claude/agents/`; independent fronts go out as **parallel** delegations in the same block.
+- **Parallel agents on the same task — where each one works is decided by what the node touches**:
+  - A node that only **produces trail** (a document, an analysis, a verification) runs in parallel in the **same tree**, each agent scoped to its own task (`WFA_TASK=<repo>/<task>`): the trail machinery is built for exactly this — atomic writes, a directory lock, a 2-minute grace period at end of turn.
+  - A node that **touches code** runs in its **own worktree per branch**, of the **right** repository — `workspace/<slug>` when the code is the repo's, this harness's own tree when the change is to the harness. In that tree the state root **always** points back to the main tree (`WFA_ROOT=<main tree>`), or the trail falls into a ghost state the panel never shows.
+  - **Never two agents checking out the same tree.**
+  - A worktree does **not** isolate a machine-global resource: the cluster, the active context, the image daemon and ports are shared. A node that touches the cluster **serializes**, or gets a namespace per branch and distinct ports, decided in the plan.
+  - **Merging the branches at the join point is the human's decision** — the executor delivers the branch and does not merge or push it.
+  - **A briefing for an executor in its own worktree carries two mandatory adjustments in the body**: "work in `<worktree path>`, branch `<branch>`; export `WFA_ROOT=<main tree>` and `WFA_TASK=<repo>/<task>`; trail tools are always the main tree's, never your own worktree's; no merge and no push — deliver the branch and the report." Without these two, the agent posts trail the panel can't see and the check approves an empty tree.
+- **Models per role**: the pilot thinks with the most capable model in the session; **executors run Opus** — the definitions in `.claude/agents/` already pin `model: opus`, and any ad-hoc delegation (general-purpose) must pass `model: opus` explicitly. When recording cost, report `--model claude-opus-5`.
+- **Context survives**: each specialized agent is created **once per repo** and continued across tasks (SendMessage to the same agent) — never respawned from scratch; in chained tasks, the same k8s-operator carries on to the next one, accumulating context about the cluster and the code. It always posts to the bus of the task it's currently working on; the repo's agent registry lives in `repos/<repo>/agents.json` (kept up to date by the bus).
+- **No direct communication between agents of different tasks**: coordination across tasks goes through the pilot — the agent reports in its own Room, the pilot decides and relays via a briefing to the other task's agent (visible in both Rooms). A new task's briefing includes what matters from the repo's previous tasks' review/journal.
+- **Every delegation leaves a trace**: lifecycle on the bus — `node tools/bus.mjs post <repo> <task> --from pilot --to <agent> --kind status --meta '{"state":"spawned"}' "<one-line briefing>"`, then `working` and `done` (the repo's `agents.json` is kept up to date automatically by the bus on these posts). On return, record the cost: `node tools/costs.mjs add <repo> <task> --agent <X> --in N --out N [--model m] [--label "..."]` — the tokens come from the subagent's completion notification; if only the total is available, use `--total`.
+- **Operational logs on the bus**: relevant kubectl/docker/test output goes to `node tools/bus.mjs log <repo> <task> --level debug|info|warn|error --source <S> "body"` (body `-` reads stdin for multiline) — the human follows all of it in the Logs panel, at any level.
+- **Human in the loop**: an irreversible action or a course decision → `bus.mjs post ... --kind question|decision --to human` on the bus **and wait for the answer**. The human answers through the viewer OR the conversation — check with `node tools/bus.mjs read <repo> <task> --to human [--since ISO]` (the id of each question prints there). A question closes by an explicit **link**, not by whatever message comes next: when the answer arrives in the conversation instead of the panel, **the pilot is the one who records the link** — `node tools/bus.mjs post <repo> <task> --from human --to pilot --meta '{"answers":"<id>"}' "<answer>"` (or `{"dismisses":"<id>"}` if the human says it doesn't need answering) — otherwise the question stays open in the panel and at end of turn even though it was answered out loud.
+- **Each agent's final report becomes a `--kind report` on the bus** — the viewer's Room is the living record of the collaboration.
+- **Project state is PUSH: whoever touches it, records it** — the viewer renders `repos/<repo>/state.json` and `access.json`; on its own it only pings the URLs already registered in Access and reads the `workspace/` git history for the Diff tab, it never discovers cluster state on its own. The k8s-operator updates the `runtime` section (via `state.mjs`) and registers/removes access entries (via `access.mjs`) after **every** operation that changes the cluster (deploy/scale/delete/port-forward) — an ephemeral URL always comes with a `--note` on how to recreate it. The pilot updates the `environment` section when opening a work session on a repo; the `origin` section (the clone's upstream) is recorded at the moment of cloning.
 
-## Regras para o agente
+## Rules for the agent
 
-- **Código SÓ em `workspace/<repo>/`** — nunca artefatos do harness lá dentro. Commits no repo do workspace com mensagens limpas, sem co-autoria. Todo commit feito no workspace durante uma task é registrado no ato com `node tools/commits.mjs add <repo> <task> <hash>` — o diff aparece na aba **Diff** do painel.
-- **O agente delega o máximo a subagentes e usa paralelismo** — o usuário é o arquiteto, não o datilógrafo. Trabalhos independentes saem num mesmo bloco de agentes paralelos; a delegação (o que foi, para quem, com qual instrução) é registrada no plano e no journal — ela É o objeto da retrospectiva.
-- **Nunca peça permissão para continuar o fluxo**: fase fechada → próxima fase no mesmo turno. Confirmação é só para decisão real em aberto; andamento se anuncia, não se requisita. Quando o pedido do usuário **já contém a especificação** da fase seguinte (ex.: "cria uma task de deploy com validação de probes" já diz o que a task é), as fases saem emendadas no mesmo turno: criar → enunciado detalhado → plano + DAG → despachar agentes — só pare se surgir decisão real que só o humano pode tomar. Toda pergunta ao usuário vem com **default recomendado**: o usuário só intervém quando discorda.
-- **Persista cedo e em bloco paralelo**: após cada troca substantiva (plano fechado, parte concluída, decisão tomada), atualize os arquivos da task. Escritas independentes da mesma rodada saem num único bloco de tool calls paralelos. O usuário acompanha o viewer em tempo real.
-- **Journal com timestamps**: cada evento relevante (decisão, delegação, resultado, correção de rumo) vira uma linha `HH:MM — evento` em `20-journal.md`, no momento em que acontece — não reconstituído depois.
-- **Artefatos em `repos/` são legíveis por terceiros**: design doc direto, em português, sem citar mecânica interna do harness (nomes de tools, viewer, learnings) — referências usam os nomes visíveis dos artefatos ("plano", "journal"). **Sem vocabulário de avaliação** ("o que será observado", "nota", "julgamento"): requisitos e critérios de aceite se escrevem de forma neutra, como um design doc/issue de trabalho — a régua da retrospectiva existe só nas skills (uso interno do piloto), nunca no texto dos artefatos.
-- **Bastidor invisível — vale também para a conversa**: o piloto conduz focado no projeto-alvo; as respostas falam do trabalho (o que foi feito, próximo passo em linguagem natural) e nunca narram mecânica interna: não citar skills/comandos ("/refinar está disponível"), não anunciar amarrações ao learnings ("amarrei ao learnings de propósito" — o learnings influencia o conteúdo silenciosamente), não descrever templates ou harness. Mesmo espírito da regra acima sobre artefatos, estendido à conversa.
-- IO mecânico (esqueleto de repo/task) **nunca é datilografado**: sempre pelos tools.
+- **Code ONLY in `workspace/<repo>/`** — never harness artifacts in there. Commits in the workspace repo use clean messages, no co-authorship. Every commit made in the workspace during a task is recorded on the spot with `node tools/commits.mjs add <repo> <task> <hash>` — the diff shows up in the panel's **Diff** tab.
+- **The agent delegates as much as possible to subagents and uses parallelism** — the user is the architect, not the typist. Independent work goes out in the same block of parallel agents; the delegation (what, to whom, with what instruction) is recorded in the plan and the journal — it IS the object of the retrospective.
+- **Never ask permission to continue the flow**: a closed phase → the next phase in the same turn. Confirmation is only for a real decision still open; progress is announced, not requested. When the user's request **already contains the specification** of the next phase (e.g., "create a deploy task with probe validation" already says what the task is), the phases chain in the same turn: create → detailed brief → plan + DAG → dispatch agents — stop only if a real decision comes up that only the human can make. Every question to the user comes with a **recommended default**: the user only steps in when they disagree.
+- **Persist early and in a parallel block**: after every substantive exchange (plan closed, part finished, decision made), update the task's files. Independent writes from the same round go out in a single block of parallel tool calls. The user follows along on the viewer in real time.
+- **Journal with timestamps**: every relevant event (decision, delegation, result, course correction) becomes an `HH:MM — event` line in `20-journal.md`, at the moment it happens — not reconstructed afterward.
+- **Artifacts in `repos/` are readable by third parties**: a straightforward design doc, in English, without naming the harness's internal mechanics (tool names, viewer, learnings) — references use the artifacts' visible names ("plan", "journal"). **Neutral voice**: a requirement or acceptance criterion is written the way a design doc or an issue would write it — the final state, and the command or observation that verifies it — never as an appraisal of whoever executed it. The four-lens ruler is the pilot's own instrument for the retrospective — it lives in the `retrospective` skill, never in artifact text.
+- **Invisible backstage — also applies to the conversation**: the pilot drives focused on the target project; the replies talk about the work (what was done, next step in natural language) and never narrate internal mechanics: don't mention skills/commands ("/refine is available"), don't announce ties to learnings ("I tied this to learnings on purpose" — learnings silently influences content), don't describe templates or the harness. Same spirit as the rule above about artifacts, extended to the conversation.
+- Mechanical IO (repo/task skeleton) is **never** hand-typed: always through the tools.
 
-## Ao iniciar qualquer sessão
+## Deterministic checks
 
-Leia `learnings.md` e use os itens **abertos** ativamente: alerte antes do usuário repetir o erro e vigie exatamente essas áreas durante a execução. Ao corrigir algo relevante ou fechar um review, adicione/atualize itens — sem duplicar; item aberto demonstrado com solidez promove para `dominado` citando a task que comprovou.
+`tools/check.mjs` runs no model — it is plain code checking the workspace. Two classes:
 
-## Estrutura
+- **Structural** (`node tools/check.mjs [<repo> [<task>]]`) — meta.json readable with the fields the panel needs, and a task marked `done` only with every DAG node `done`, no guardrail `pending`/`fail`, and no question to the human left unanswered. These are wired into the `Stop` hook (`.claude/settings.json`) and **block the end of the turn**: a pending item comes back as text to act on, not a silent failure. A task some other conversation is still actively touching gets a short grace period, and `WFA_TASK=<repo>/<task>` scopes the hook to one task so it never blocks on another agent's in-progress work.
+- **Lints** (`--lint`) — quality-of-trail predicates (no internal-mechanics/evaluation vocabulary in artifacts, no artifact left as a stub, the DAG matches the plan, an accepted guardrail has its reason echoed in the journal, cost and commits are recorded, no unanswered question). They never block a turn — check them **before closing a task**, and they gate CI. `node tools/check.mjs --rules` prints what every predicate requires and returns.
+
+## At the start of any session
+
+Read `learnings.md` and actively use the **open** items: warn before the user repeats the mistake, and watch exactly those areas during execution. When fixing something relevant or closing a review, add/update items **through `node tools/learnings.mjs append|promote|note`** — never by reading and editing the file by hand: several agents can touch it in the same window, and a Read-then-Edit race silently drops whichever item lost the race. The tool locks, dedupes by title, and requires the four fields (Status, Origin, Learning, How to apply) on every new item. An open item demonstrated solidly gets promoted to `mastered`, citing the task that proved it.
+
+## Structure
 
 ```
 workspace-for-agents/
-├── README.md                  # instalação e primeiros passos
-├── CLAUDE.md                  # instruções do piloto (este arquivo)
-├── .env.example               # configuração de publicação (copie para .env)
-├── learnings.md               # memória entre repos/tasks (itens aberto/dominado)
-├── workspace/<repo>/          # código clonável; git repo PRÓPRIO, limpo — fora do git do harness
-├── repos/<repo>/              # metadados do harness por repo
-│   ├── meta.json              # {"title","stack":[],"status","created","updated","workspace"}
-│   ├── 00-contexto.md         # objetivo do repo, enunciado macro
-│   ├── agents.json            # agentes vivos do repo (mantido pelo bus)
+├── README.md                  # installation and first steps
+├── CLAUDE.md                  # pilot instructions (this file)
+├── .env.example                # publishing configuration (copy to .env)
+├── learnings.md               # memory across repos/tasks (open/mastered items) — written only via tools/learnings.mjs
+├── learnings.template.md      # seed for a fork that wants to start with empty memory
+├── workspace/<repo>/          # clonable code; its OWN git repo, clean — outside the harness's git
+├── repos/<repo>/              # per-repo harness metadata
+│   ├── meta.json               # {"title","stack":[],"status","created","updated","workspace"}
+│   ├── 00-context.md          # repo objective, macro brief
+│   ├── agents.json             # repo's live agents (kept up to date by the bus)
 │   └── tasks/<nn>-<slug>/     # nn = 01, 02...
-│       ├── meta.json          # {"title","status":"todo"|"em-andamento"|"concluida","depends_on":[...],...}
-│       ├── 00-enunciado.md    # enunciado do problema: objetivo, requisitos, critérios de aceite, tempo-alvo
-│       ├── 10-plano.md        # decomposição + o que delega pra IA vs faz na mão
-│       ├── 20-journal.md      # diário timestampado da execução
-│       └── 30-review.md       # retrospectiva contra os 4 critérios
-├── .claude/agents/            # executores especializados
-├── .claude/skills/            # fluxos do piloto (refinar, adversarial, retrospectiva)
-├── guardrails/pool.json       # catálogo de verificações reutilizáveis
-├── tools/                     # ferramentas Node (sem dependências)
-└── viewer/                    # painel web, porta 4500
+│       ├── meta.json          # {"title","status":"todo"|"in-progress"|"done","depends_on":[...],...}
+│       ├── 00-brief.md      # problem brief: objective, requirements, acceptance criteria, target time
+│       ├── 10-plan.md       # decomposition + what's delegated to AI vs done by hand
+│       ├── 20-journal.md      # timestamped execution diary
+│       └── 30-review.md       # retrospective through the 4 lenses
+├── .claude/agents/            # specialized executors
+├── .claude/skills/            # pilot flows (refine, adversarial, retrospective)
+├── .claude/settings.json      # Stop hook: node tools/check.mjs --hook
+├── .github/workflows/check.yml # CI: syntax, tests, pr-review.mjs verify gate
+├── guardrails/pool.json       # catalog of reusable checks
+├── tools/                     # Node tools (no dependencies)
+└── viewer/                    # web panel, port 4500
 ```
 
-## Ferramentas (Node puro, sem dependências npm)
+## Tools (plain Node, no npm dependencies)
 
-| Operação | Comando |
+| Operation | Command |
 |---|---|
-| Criar repo (repos/<slug> + workspace/<slug> com git init) | `node tools/new-repo.mjs "<Título>" [--slug <slug>]` → linha 1 é o slug |
-| Criar task (4 .md de template, numeração automática) | `node tools/new-task.mjs <repo-slug> "<Título>" [--depends-on <task>]` → linha 1 é `<nn>-<slug>` |
-| Mensagem no bus da task (Sala do viewer) | `node tools/bus.mjs post <repo> <task> --from X --to Y --kind report\|question\|decision\|approval\|status [--meta '<json>'] "corpo"` |
-| Log operacional (painel Logs) | `node tools/bus.mjs log <repo> <task> --level debug\|info\|warn\|error --source S "corpo"` (`-` lê stdin) |
-| Ler mensagens (ex.: respostas do humano) | `node tools/bus.mjs read <repo> <task> [--to humano] [--since ISO]` |
-| Registrar tokens de uma delegação (painel Custos) | `node tools/costs.mjs add <repo> <task> --agente X [--in N] [--out N] [--total N] [--modelo m] [--label "..."]` |
-| Gravar/atualizar a DAG da task (valida ciclos, ids e pool) | `node tools/dag.mjs set <repo> <task>` ← stdin = JSON completo |
-| Status de um nó (gate: guardrails resolvidos e deps concluídas) | `node tools/dag.mjs node-status <repo> <task> <nodeId> todo\|executando\|concluida\|bloqueada [--force]` |
-| Veredito de guardrail num nó | `node tools/dag.mjs guardrail <repo> <task> <nodeId> <gid> pass\|falha\|pendente [--nota "..."]` — falha aceita: `... aceito --aceitar "motivo"` |
-| Ver / validar a DAG | `node tools/dag.mjs show <repo> <task>` · `node tools/dag.mjs validate <repo> <task>` |
-| Catálogo de guardrails reutilizáveis | `node tools/dag.mjs pool [--tag t] [--categoria c]` |
-| Registrar/remover acesso (URL) do repo — painel Visão geral | `node tools/acessos.mjs add <repo> --nome N --url U --tipo app\|metricas\|dashboard\|outro [--nota "como recriar URL efêmera"]` · `remove <repo> --nome N` · `list <repo>` |
-| Estado vivo do repo (seções runtime\|ambiente\|origem, timestampadas) | `node tools/estado.mjs set <repo> <secao>` ← stdin = JSON da seção · `node tools/estado.mjs show <repo>` |
-| Compartilhar um repo (link público) | `node tools/share.mjs <repo>` — só quando o usuário pedir e com `.env` configurado (ver `.env.example`); depois o viewer re-publica sozinho a cada mudança (`--off` pausa, `--delete` tira do ar, `--sem-custos` publica sem tokens/USD) |
+| Create repo (repos/<slug> + workspace/<slug> with git init) | `node tools/new-repo.mjs "<Title>" [--slug <slug>]` → line 1 is the slug |
+| Create task (4 .md templates, automatic numbering) | `node tools/new-task.mjs <repo-slug> "<Title>" [--depends-on <task>]` → line 1 is `<nn>-<slug>` |
+| Message on the task's bus (viewer's Room) | `node tools/bus.mjs post <repo> <task> --from X --to Y --kind report\|question\|decision\|approval\|status [--meta '<json>'] "body"` — every message prints its own id; close a question by linking to it: `--meta '{"answers":"<id>"}'` or `'{"dismisses":"<id>"}'` |
+| Operational log (Logs panel) | `node tools/bus.mjs log <repo> <task> --level debug\|info\|warn\|error --source S "body"` (`-` reads stdin) |
+| Read messages (e.g. human's answers) | `node tools/bus.mjs read <repo> <task> [--to human] [--since ISO]` |
+| Record a delegation's tokens (Costs panel) | `node tools/costs.mjs add <repo> <task> --agent X [--in N] [--out N] [--total N] [--model m] [--label "..."]` |
+| Write/update the task's DAG (validates cycles, ids and pool) | `node tools/dag.mjs set <repo> <task>` ← stdin = full JSON |
+| Status of a node (gate: guardrails resolved and deps done) | `node tools/dag.mjs node-status <repo> <task> <nodeId> todo\|running\|done\|blocked [--force]` |
+| Guardrail verdict on a node | `node tools/dag.mjs guardrail <repo> <task> <nodeId> <gid> pass\|fail\|pending [--note "..."]` — accepted failure: `... accepted --accept "reason"` |
+| View / validate the DAG | `node tools/dag.mjs show <repo> <task>` · `node tools/dag.mjs validate <repo> <task>` |
+| Catalog of reusable guardrails | `node tools/dag.mjs pool [--tag t] [--category c]` |
+| Register/remove a repo access (URL) — Overview panel | `node tools/access.mjs add <repo> --name N --url U --type app\|metrics\|dashboard\|other [--note "how to recreate the ephemeral URL"]` · `remove <repo> --name N` · `list <repo>` |
+| Repo's live state (runtime\|environment\|origin sections, timestamped) | `node tools/state.mjs set <repo> <section>` ← stdin = section JSON · `node tools/state.mjs show <repo>` |
+| Share a repo (public link) | `node tools/share.mjs <repo>` — only when the user asks and with `.env` configured (see `.env.example`); afterwards the viewer republishes on its own on every change (`--off` pauses it, `--delete` takes it down, `--no-costs` publishes without tokens/USD) |
+| Deterministic workspace checks (structural/lint) | `node tools/check.mjs [<repo> [<task>]] [--lint]` · `--rules` lists every predicate · `--hook` is the `Stop`-hook entrypoint |
+| Write cross-task memory (`learnings.md`) | `node tools/learnings.mjs append --task <repo>/<task>` (stdin = one or more `## <title>` items, all 4 fields) · `promote "<title>" --task <repo>/<task>` · `note "<title>" "<text>"` |
+| PR review briefing / publish / CI gate | `node tools/pr-review.mjs [--base <ref>] [--head <sha>]` · `post [--pr N] [--dry-run] < verdict.json` · `verify --pr N --head <sha>` |
+| Migrate state written before the English rename | `node tools/migrate.mjs --all\|<repo> [--dry-run]` — renames the artifacts and rewrites keys/values under `repos/`; idempotent |
 
-Ambos os de criação atualizam `updated` nos `meta.json` que tocam. `meta.json` se edita manualmente só para mudar `status` e `stack`.
+Both creation tools update `updated` in the `meta.json` files they touch. `meta.json` is edited by hand only to change `status` and `stack`.
 
-**A página compartilhada É o painel do repo**: `share.mjs` embute o mesmo `app.js`/`style.css` do viewer em modo estático (state de UM repo em `window.__DATA__`, auto-refresh por ETag, Sala só de leitura). Toda melhoria no painel entra automaticamente no compartilhado — nunca criar divergência entre os dois sem combinar com o usuário. Caso de uso principal: terceiros acompanham o link ao vivo enquanto a sessão de trabalho acontece. Cada repo tem sua URL e seu registro próprio (mais de um repo pode estar compartilhado ao mesmo tempo); o link leva só aquele repo — nenhum outro entra na página: no que vai para o ar, entradas de estado que pertencem a outro repo ou a outro namespace do cluster são removidas e menções a repos vizinhos viram "outro serviço do cluster" (a fonte em `repos/` nunca é alterada).
+**The shared page IS the repo's panel**: `share.mjs` embeds the very same `app.js`/`style.css` from the viewer in static mode (state of ONE repo in `window.__DATA__`, auto-refresh by ETag, Room read-only). Every panel improvement automatically reaches the shared page — never let the two drift apart without checking with the user. Main use case: third parties follow the live link while the work session is happening. Each repo has its own URL and its own record (more than one repo can be shared at the same time); the link only carries that one repo — no other one gets in: on what goes live, state entries belonging to another repo or another cluster namespace are removed, and mentions of neighboring repos become "another service on the cluster" (the source in `repos/` is never altered).

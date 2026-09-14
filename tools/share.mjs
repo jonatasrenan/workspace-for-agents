@@ -1,23 +1,30 @@
-// Publica UM repo como página estática em <WFA_SHARE_BASE>/<uuid>/index.html
-// (S3 + CloudFront, um UUID por caminho — configuração em .env, ver .env.example).
+// Publishes ONE repo as a static page at <WFA_SHARE_BASE>/<uuid>/index.html
+// (S3 + CloudFront, one UUID per path — configuration in .env, see .env.example).
 //
-// Uso:
-//   node tools/share.mjs <repo>                  # gera e publica (cria uuid na 1ª vez)
-//   node tools/share.mjs <repo> --sem-custos     # publica sem o painel Custos / badges de tokens
-//   node tools/share.mjs <repo> --dry-run        # só gera o html local, mostra o caminho
-//   node tools/share.mjs <repo> --off            # pausa a republicação automática (página fica no ar)
-//   node tools/share.mjs <repo> --delete         # tira do ar (remove do S3 + apaga o registro)
-//   node tools/share.mjs <repo> --quiet          # modo silencioso (usado pelo viewer)
+// Usage:
+//   node tools/share.mjs <repo>                  # generates and publishes (creates a uuid the 1st time)
+//   node tools/share.mjs <repo> --no-costs     # publishes without the Costs panel / token badges
+//   node tools/share.mjs <repo> --dry-run        # only generates the local html, shows the path
+//   node tools/share.mjs <repo> --off            # pauses automatic republishing (page stays up)
+//   node tools/share.mjs <repo> --delete         # takes it down (removes from S3 + deletes the record)
+//   node tools/share.mjs <repo> --quiet          # silent mode (used by the viewer)
 //
-// O ESCOPO é o repo: a página leva só aquele repo (tasks, agentes que atuaram
-// nele, guardrails, totais recalculados) — nenhum outro repo do harness entra no
-// HTML. Vários repos podem estar compartilhados ao mesmo tempo, cada um com sua URL.
+// The SCOPE is the repo: the page only carries that repo (tasks, agents that
+// acted on it, guardrails, recalculated totals) — no other repo from the harness
+// goes into the HTML. Several repos can be shared at the same time, each with its own URL.
 //
-// O viewer (viewer/server.mjs) chama este script sozinho quando um repo com share
-// ativo muda — o agente nunca faz deploy manualmente.
+// The viewer (viewer/server.mjs) calls this script on its own when a repo with
+// an active share changes — the agent never deploys manually.
 //
-// Registro: .shares.json na raiz (fora do git):
-//   { "shares": { "<repo>": { uuid, url, auto, custos, publicado_em } } }
+// Registry: .shares.json at the root (outside git):
+//   { "shares": { "<repo>": { uuid, url, auto, costs, published_at } } }
+//
+// Deliberately NOT using tools/root.mjs here: this script also reads the
+// viewer's own assets (viewer/public/*) from the same tree it computes ROOT
+// from, and it embeds the viewer's server module (buildState, below) directly
+// — splitting "state root" from "install root" the way the other tools do
+// would be a change of a different nature (which tree do the viewer assets
+// come from when WFA_ROOT and the install differ?), out of scope here.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -29,8 +36,8 @@ import { buildState } from '../viewer/server.mjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC_DIR = path.join(ROOT, 'viewer', 'public');
 const SHARES_FILE = path.join(ROOT, '.shares.json');
-// --- configuração de publicação: sem defaults, tudo vem do ambiente ---
-// Variáveis de ambiente ou um `.env` na raiz (não versionado — modelo em .env.example).
+// --- publishing configuration: no defaults, everything comes from the environment ---
+// Environment variables or a `.env` at the root (not versioned — template in .env.example).
 function carregarDotEnv() {
   let txt;
   try {
@@ -49,20 +56,20 @@ function carregarDotEnv() {
 carregarDotEnv();
 
 const CONFIG_OBRIGATORIA = {
-  WFA_SHARE_BUCKET: 'bucket S3 de destino (ex.: meu-bucket-de-site)',
-  WFA_SHARE_DIST: 'id da distribuição CloudFront à frente do bucket (ex.: E123ABC456DEFG)',
-  WFA_SHARE_BASE: 'URL base pública, sem barra final (ex.: https://exemplo.com)',
-  AWS_PROFILE: 'perfil do AWS CLI com acesso ao bucket e à distribuição',
-  AWS_DEFAULT_REGION: 'região da AWS (ex.: us-east-1)',
+  WFA_SHARE_BUCKET: 'destination S3 bucket (e.g. my-site-bucket)',
+  WFA_SHARE_DIST: 'CloudFront distribution id in front of the bucket (e.g. E123ABC456DEFG)',
+  WFA_SHARE_BASE: 'public base URL, no trailing slash (e.g. https://example.com)',
+  AWS_PROFILE: 'AWS CLI profile with access to the bucket and the distribution',
+  AWS_DEFAULT_REGION: 'AWS region (e.g. us-east-1)',
 };
 
-// Só publicar e despublicar tocam a AWS: --dry-run e --off não exigem configuração.
+// Only publishing and unpublishing touch AWS: --dry-run and --off don't require configuration.
 function config() {
   const faltando = Object.keys(CONFIG_OBRIGATORIA).filter((k) => !process.env[k]);
   if (faltando.length) {
-    console.error('publicação não configurada. Defina no ambiente ou em um .env na raiz:');
+    console.error('publishing not configured. Set these in the environment or in a .env at the root:');
     for (const k of faltando) console.error(`  ${k}  — ${CONFIG_OBRIGATORIA[k]}`);
-    console.error('modelo pronto: cp .env.example .env  (sem AWS, use --dry-run para gerar só o HTML local)');
+    console.error('ready-made template: cp .env.example .env  (without AWS, use --dry-run to generate just the local HTML)');
     process.exit(1);
   }
   return {
@@ -79,36 +86,36 @@ const dry = args.includes('--dry-run');
 const quiet = args.includes('--quiet');
 const off = args.includes('--off');
 const del = args.includes('--delete');
-const semCustos = args.includes('--sem-custos');
+const noCosts = args.includes('--no-costs');
 const log = (...a) => !quiet && console.log(...a);
 
 if (!slug || /[/\\]|\.\./.test(slug)) {
-  console.error('uso: node tools/share.mjs <repo> [--sem-custos|--dry-run|--off|--delete|--quiet]');
+  console.error('usage: node tools/share.mjs <repo> [--no-costs|--dry-run|--off|--delete|--quiet]');
   process.exit(1);
 }
-// Flag desconhecida NUNCA passa: um "--dry-runn" digitado errado publicaria de
-// verdade em S3, que é a única ação irreversível deste projeto.
-const FLAGS_VALIDAS = ['--dry-run', '--quiet', '--off', '--delete', '--sem-custos'];
-const desconhecidas = args.filter((a) => a.startsWith('--') && !FLAGS_VALIDAS.includes(a));
-if (desconhecidas.length) {
-  console.error(`flag desconhecida: ${desconhecidas.join(', ')} — aceitas: ${FLAGS_VALIDAS.join(', ')}`);
+// An unknown flag must NEVER go through: a mistyped "--dry-runn" would actually
+// publish to S3, which is this project's only irreversible action.
+const VALID_FLAGS = ['--dry-run', '--quiet', '--off', '--delete', '--no-costs'];
+const unknown = args.filter((a) => a.startsWith('--') && !VALID_FLAGS.includes(a));
+if (unknown.length) {
+  console.error(`unknown flag: ${unknown.join(', ')} — accepted: ${VALID_FLAGS.join(', ')}`);
   process.exit(1);
 }
 const posicionais = args.filter((a) => !a.startsWith('--'));
 if (posicionais.length > 1) {
-  console.error(`só um repo por vez: recebi ${posicionais.join(', ')}`);
+  console.error(`only one repo at a time: got ${posicionais.join(', ')}`);
   process.exit(1);
 }
 if (!fs.existsSync(path.join(ROOT, 'repos', slug))) {
-  console.error(`repo não encontrado: repos/${slug}`);
+  console.error(`repo not found: repos/${slug}`);
   process.exit(1);
 }
 
-// Falha cedo: publicar exige a infraestrutura configurada. --dry-run, --off e
-// --delete seguem sem isso (o --delete pede a configuração só quando há o que remover).
+// Fail early: publishing requires the infrastructure to be configured. --dry-run,
+// --off and --delete proceed without it (--delete only requires it when there's something to remove).
 const CFG = dry || off || del ? null : config();
 
-// --- registro de shares (um por repo) ---
+// --- share registry (one per repo) ---
 function readShares() {
   try {
     const reg = JSON.parse(fs.readFileSync(SHARES_FILE, 'utf8'));
@@ -119,7 +126,7 @@ function readShares() {
 function writeShares(shares) {
   const tmp = SHARES_FILE + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify({ shares }, null, 2) + '\n');
-  fs.renameSync(tmp, SHARES_FILE); // troca atômica: o viewer lê este arquivo a cada mudança
+  fs.renameSync(tmp, SHARES_FILE); // atomic swap: the viewer reads this file on every change
 }
 
 const shares = readShares();
@@ -127,18 +134,18 @@ const entry = shares[slug] ?? null;
 
 if (off) {
   if (!entry) {
-    log(`repo não está compartilhado: ${slug}`);
+    log(`repo is not shared: ${slug}`);
     process.exit(0);
   }
   entry.auto = false;
   writeShares(shares);
-  log('republicação automática pausada (a página continua no ar)');
+  log('automatic republishing paused (the page stays up)');
   process.exit(0);
 }
 
 if (del) {
   if (!entry) {
-    log(`repo não está compartilhado: ${slug}`);
+    log(`repo is not shared: ${slug}`);
     process.exit(0);
   }
   const { bucket: BUCKET, dist: DIST_ID, env: AWS_ENV } = config();
@@ -153,43 +160,43 @@ if (del) {
       { env: AWS_ENV, stdio: quiet ? 'ignore' : 'inherit' }
     );
   } catch (e) {
-    console.error(`remoção no S3 falhou: ${e.message}`);
+    console.error(`removal on S3 failed: ${e.message}`);
     process.exit(1);
   }
   delete shares[slug];
   writeShares(shares);
-  log(`descompartilhado (removido do S3): ${slug} — um novo compartilhamento gera outra URL`);
+  log(`unshared (removed from S3): ${slug} — a new share will generate a different URL`);
   process.exit(0);
 }
 
-// --- state ESCOPADO no repo ---
-// Tudo que a página mostra sai daqui: qualquer campo com outro repo dentro seria
-// vazamento, então o payload é remontado do zero com o repo pedido.
+// --- state SCOPED to the repo ---
+// Everything the page shows comes from here: any field carrying another repo
+// inside it would be a leak, so the payload is rebuilt from scratch with just the requested repo.
 const full = buildState();
 const repo = full.repos.find((r) => r.slug === slug);
 if (!repo) {
-  console.error(`repo não encontrado no state: ${slug}`);
+  console.error(`repo not found in state: ${slug}`);
   process.exit(1);
 }
 
-// agentes que atuaram NESTE repo (roster + custos + mensagens + DAG): só as
-// definições deles vão junto — o catálogo inteiro de .claude/agents não é do repo.
+// agents that acted on THIS repo (roster + costs + messages + DAG): only their
+// definitions go along — the full .claude/agents catalog is not part of the repo.
 const agentNames = new Set();
 for (const a of repo.agents || []) if (a?.name) agentNames.add(a.name);
 for (const t of repo.tasks || []) {
   for (const a of t.agents || []) if (a?.name) agentNames.add(a.name);
-  for (const c of t.costs || []) if (c?.agente) agentNames.add(c.agente);
+  for (const c of t.costs || []) if (c?.agent) agentNames.add(c.agent);
   for (const m of t.messages || []) {
-    for (const who of [m?.from, m?.to]) if (who && who !== 'humano' && who !== 'dag') agentNames.add(who);
+    for (const who of [m?.from, m?.to]) if (who && who !== 'human' && who !== 'dag') agentNames.add(who);
   }
-  for (const n of t.dag?.nodes || []) if (n?.agente) agentNames.add(n.agente);
+  for (const n of t.dag?.nodes || []) if (n?.agent) agentNames.add(n.agent);
 }
 const agentDefs = {};
 for (const [name, def] of Object.entries(full.agentDefs || {})) if (agentNames.has(name)) agentDefs[name] = def;
 
-// --sem-custos: os números somem do PAYLOAD (não só da tela) — a página publicada
-// não carrega token/USD nenhum; a flag fica no registro e vale nas republicações.
-if (semCustos) {
+// --no-costs: the numbers disappear from the PAYLOAD (not just the screen) — the
+// published page carries no token/USD figures at all; the flag stays in the record and applies to republishes.
+if (noCosts) {
   for (const t of repo.tasks || []) {
     t.costs = [];
     t.tokens = { in: 0, out: 0, total: 0 };
@@ -206,35 +213,35 @@ const data = {
   agentDefs,
 };
 
-// --- limpeza: nada de outro repo sai na publicação ---
-// Um repo pode citar os vizinhos legitimamente (mesmo cluster, mesma máquina):
-// entradas identificadas por outro repo (linha de deployment/serviço/acesso) são
-// REMOVIDAS e as menções restantes em texto viram "outro repo". A fonte em
-// repos/ não é tocada — a limpeza acontece só no que vai para o ar.
+// --- cleanup: nothing from another repo goes into the publication ---
+// A repo may legitimately mention its neighbors (same cluster, same machine):
+// entries identified by another repo (a deployment/service/access line) are
+// REMOVED and the remaining textual mentions become "another repo". The
+// source in repos/ is not touched — the cleanup only happens on what goes live.
 const outros = full.repos
   .filter((r) => r.slug !== slug)
   .map((r) => r.slug)
-  .sort((a, b) => b.length - a.length); // slug mais longo primeiro: evita substituição parcial
-const OUTRO = 'outro serviço do cluster';
+  .sort((a, b) => b.length - a.length); // longest slug first: avoids a partial substitution
+const OUTRO = 'another service on the cluster';
 const scrubStr = (s) => outros.reduce((acc, o) => acc.split(o).join(OUTRO), s);
-// Item do estado que não é deste repo: identificado por outro repo, ou vivendo em
-// outro namespace ("kube-system/metrics-server") — a página mostra o runtime DO
-// repo, não o inventário da máquina onde ele roda.
-const isAlheio = (v, inEstado) => {
+// A state item that isn't from this repo: identified by another repo, or living in
+// another namespace ("kube-system/metrics-server") — the page shows the repo's own
+// runtime, not the inventory of the machine it runs on.
+const isAlheio = (v, inState) => {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
-  const id = [v.nome, v.name, v.slug, v.deployment, v.servico].find((x) => typeof x === 'string')?.trim();
+  const id = [v.name, v.slug, v.deployment, v.service].find((x) => typeof x === 'string')?.trim();
   if (id == null) return false;
   if (outros.includes(id)) return true;
-  return inEstado && id.includes('/') && id.split('/')[0] !== slug;
+  return inState && id.includes('/') && id.split('/')[0] !== slug;
 };
-function scrub(v, inEstado = false) {
+function scrub(v, inState = false) {
   if (typeof v === 'string') return scrubStr(v);
-  if (Array.isArray(v)) return v.filter((x) => !isAlheio(x, inEstado)).map((x) => scrub(x, inEstado));
+  if (Array.isArray(v)) return v.filter((x) => !isAlheio(x, inState)).map((x) => scrub(x, inState));
   if (v && typeof v === 'object') {
     const out = {};
     for (const [k, val] of Object.entries(v)) {
-      if (outros.includes(k)) continue; // coleção indexada por repo: a chave alheia sai inteira
-      out[scrubStr(k)] = scrub(val, inEstado || k === 'estado' || k === 'acessos');
+      if (outros.includes(k)) continue; // collection indexed by repo: the foreign key goes out whole
+      out[scrubStr(k)] = scrub(val, inState || k === 'state' || k === 'accesses');
     }
     return out;
   }
@@ -242,21 +249,21 @@ function scrub(v, inEstado = false) {
 }
 const clean = scrub(data);
 
-// guarda dura: depois da limpeza, nenhum slug de outro repo pode sobrar no payload
+// hard guard: after cleanup, no other repo's slug can be left in the payload
 const dataJsonRaw = JSON.stringify(clean);
 if (clean.repos.length !== 1 || clean.repos[0].slug !== slug) {
-  console.error(`abortado: o payload deveria conter só ${slug}`);
+  console.error(`aborted: the payload should only contain ${slug}`);
   process.exit(1);
 }
 const vazou = outros.filter((s) => dataJsonRaw.includes(s));
 if (vazou.length) {
-  console.error(`abortado: o payload de ${slug} ainda menciona outro(s) repo(s): ${vazou.join(', ')}`);
+  console.error(`aborted: ${slug}'s payload still mentions other repo(s): ${vazou.join(', ')}`);
   process.exit(1);
 }
 
-// --- html autocontido: MESMO app.js/style.css do viewer, em modo estático ---
-// O esqueleto é o próprio viewer/public/index.html (fonte única): as tags externas
-// viram conteúdo embutido. Toda melhoria no painel entra aqui automaticamente.
+// --- self-contained html: the SAME app.js/style.css from the viewer, in static mode ---
+// The skeleton is the viewer/public/index.html itself (single source): the external
+// tags become embedded content. Every panel improvement reaches this automatically.
 const pub = (f) => fs.readFileSync(path.join(PUBLIC_DIR, f), 'utf8');
 const css = pub('style.css');
 const appJs = pub('app.js');
@@ -264,21 +271,21 @@ const markedJs = pub('vendor/marked.min.js');
 const mermaidJs = pub('vendor/mermaid.min.js');
 const dataJson = dataJsonRaw.replace(/</g, '\\u003c');
 const buildAt = new Date().toISOString();
-// hash do código da página: dados novos com mesmo código → atualização suave no
-// navegador de quem assiste; código novo → reload completo.
+// hash of the page code: new data with the same code → smooth update in the
+// browser of whoever's watching; new code → full reload.
 const appHash = crypto.createHash('sha1').update(appJs).update(css).digest('hex').slice(0, 12);
 const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const title = `${repo.title} — Workspace for Agents`;
 
 const bootstrap = `
 window.__STATIC__ = true;
-window.__NO_COSTS__ = ${semCustos ? 'true' : 'false'};
+window.__NO_COSTS__ = ${noCosts ? 'true' : 'false'};
 window.__BUILD_AT__ = "${buildAt}";
 window.__APP_HASH__ = "${appHash}";
 window.__DATA__ = ${dataJson};`;
 
-// substituições sobre o esqueleto do viewer — se alguma não casar, o index.html
-// mudou de forma e a página sairia quebrada: falha alto em vez de publicar lixo.
+// substitutions on top of the viewer's skeleton — if one doesn't match, index.html
+// has changed shape and the page would go out broken: fail loud instead of publishing garbage.
 const subs = [
   [/<title>[^<]*<\/title>/, () => `<title>${esc(title)}</title>\n  <meta name="robots" content="noindex" />`],
   [/<link rel="stylesheet" href="\/style\.css"\s*\/?>/, () => `<style>${css}</style>`],
@@ -290,7 +297,7 @@ const subs = [
 let html = pub('index.html');
 for (const [re, rep] of subs) {
   if (!re.test(html)) {
-    console.error(`esqueleto do viewer mudou: nada casou com ${re} em viewer/public/index.html`);
+    console.error(`viewer skeleton changed: nothing matched ${re} in viewer/public/index.html`);
     process.exit(1);
   }
   html = html.replace(re, rep);
@@ -302,15 +309,15 @@ const outFile = path.join(outDir, 'index.html');
 const dataFile = path.join(outDir, 'data.json');
 fs.writeFileSync(outFile, html);
 fs.writeFileSync(dataFile, JSON.stringify(clean, null, 2));
-log(`html gerado: ${outFile} (${(html.length / 1024 / 1024).toFixed(1)} MB)`);
+log(`html generated: ${outFile} (${(html.length / 1024 / 1024).toFixed(1)} MB)`);
 
 if (dry) {
-  log('(dry-run — nada foi enviado)');
+  log('(dry-run — nothing was sent)');
   process.exit(0);
 }
 
-// uuid = identidade permanente DESTE compartilhamento: republicar mantém a URL;
-// só --delete (que apaga o registro) faz um futuro share nascer com outra.
+// uuid = this share's permanent identity: republishing keeps the URL;
+// only --delete (which erases the record) makes a future share get a different one.
 const uuid = entry?.uuid ?? crypto.randomUUID();
 const { bucket: BUCKET, dist: DIST_ID, base: BASE_URL, env: AWS_ENV } = CFG;
 const url = `${BASE_URL}/${uuid}/index.html`;
@@ -330,11 +337,11 @@ try {
     { env: AWS_ENV, stdio: quiet ? 'ignore' : 'inherit' }
   );
 } catch (e) {
-  console.error(`deploy falhou: ${e.message}`);
+  console.error(`deploy failed: ${e.message}`);
   process.exit(1);
 }
 
-shares[slug] = { uuid, url, auto: true, custos: !semCustos, publicado_em: buildAt };
+shares[slug] = { uuid, url, auto: true, costs: !noCosts, published_at: buildAt };
 writeShares(shares);
 log(`✅ ${url}`);
 process.exit(0);

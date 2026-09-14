@@ -1,30 +1,34 @@
-// Setup determinístico de repo — a LLM nunca datilografa esqueleto.
-// Uso: node tools/new-repo.mjs "Título do repo" [--slug <slug>]
-// Cria em uma chamada:
-//   repos/<slug>/           (meta.json + 00-contexto.md + tasks/)
-//   workspace/<slug>/       (git init -b main + README.md mínimo — repo de código LIMPO)
-// Imprime no stdout: linha 1 é o slug (o agente usa direto).
+// Deterministic repo setup — the LLM never hand-types the skeleton.
+// Usage: node tools/new-repo.mjs "Repo title" [--slug <slug>]
+// Creates in one call:
+//   repos/<slug>/           (meta.json + 00-context.md + tasks/)
+//   workspace/<slug>/       (git init -b main + minimal README.md — CLEAN code repo)
+// Prints to stdout: line 1 is the slug (the agent uses it directly).
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { CONTEXTO_TEMPLATE, slugify } from './templates.mjs';
+import { CONTEXT_TEMPLATE, slugify } from './templates.mjs';
+import { stateRoot } from './root.mjs';
+import { ensureMemoryFiles } from './fs.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = stateRoot();
+// This is the session's entry point: a fresh WFA_ROOT (or a fresh clone) gets
+// its learnings.md seeded here, once, instead of every tool having to check.
+ensureMemoryFiles(ROOT);
 const args = process.argv.slice(2);
-// Parsing explícito: o valor de --slug não pode ser confundido com o título, e
-// flag desconhecida é erro (silenciosamente ignorada, criaria o repo errado).
+// Explicit parsing: the --slug value must not be confused with the title, and
+// an unknown flag is an error (silently ignoring it would create the wrong repo).
 const posicionais = [];
 let slugArg = null;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--slug') {
     slugArg = args[++i] ?? null;
     if (slugArg === null || slugArg.startsWith('--')) {
-      console.error('--slug exige um valor: --slug <slug>');
+      console.error('--slug requires a value: --slug <slug>');
       process.exit(1);
     }
   } else if (args[i].startsWith('--')) {
-    console.error(`flag desconhecida: ${args[i]} — aceita: --slug <slug>`);
+    console.error(`unknown flag: ${args[i]} — accepted: --slug <slug>`);
     process.exit(1);
   } else {
     posicionais.push(args[i]);
@@ -32,47 +36,47 @@ for (let i = 0; i < args.length; i++) {
 }
 const title = posicionais[0];
 if (!title || posicionais.length > 1) {
-  console.error('uso: node tools/new-repo.mjs "Título do repo" [--slug <slug>]');
+  console.error('usage: node tools/new-repo.mjs "Repo title" [--slug <slug>]');
   process.exit(1);
 }
 
 const slug = slugArg ? slugify(slugArg) : slugify(title);
 if (!slug) {
-  console.error(`título/slug não gera slug válido: "${slugArg ?? title}"`);
+  console.error(`title/slug does not produce a valid slug: "${slugArg ?? title}"`);
   process.exit(1);
 }
 
 const repoDir = path.join(ROOT, 'repos', slug);
 const wsDir = path.join(ROOT, 'workspace', slug);
 if (fs.existsSync(repoDir) || fs.existsSync(wsDir)) {
-  console.error(`repo já existe: ${slug} (${fs.existsSync(repoDir) ? 'repos/' : 'workspace/'}${slug})`);
+  console.error(`repo already exists: ${slug} (${fs.existsSync(repoDir) ? 'repos/' : 'workspace/'}${slug})`);
   process.exit(1);
 }
 
 const today = new Date().toISOString().slice(0, 10);
 
-// --- repos/<slug>/: metadados do harness ---
+// --- repos/<slug>/: harness metadata ---
 fs.mkdirSync(path.join(repoDir, 'tasks'), { recursive: true });
 fs.writeFileSync(
   path.join(repoDir, 'meta.json'),
   JSON.stringify(
-    { title, stack: [], status: 'em-andamento', created: today, updated: today, workspace: `workspace/${slug}` },
+    { title, stack: [], status: 'in-progress', created: today, updated: today, workspace: `workspace/${slug}` },
     null,
     2
   ) + '\n'
 );
-const [contextoFile, contextoContent] = CONTEXTO_TEMPLATE;
-fs.writeFileSync(path.join(repoDir, contextoFile), contextoContent);
+const [contextFile, contextContent] = CONTEXT_TEMPLATE;
+fs.writeFileSync(path.join(repoDir, contextFile), contextContent);
 
-// --- workspace/<slug>/: repo de código próprio, limpo (sem artefatos do harness) ---
+// --- workspace/<slug>/: repo's own code, clean (no harness artifacts) ---
 fs.mkdirSync(wsDir, { recursive: true });
 const git = spawnSync('git', ['init', '-b', 'main'], { cwd: wsDir, stdio: 'pipe' });
 if (git.status !== 0) {
-  console.error(`git init falhou em workspace/${slug}: ${git.stderr}`);
+  console.error(`git init failed in workspace/${slug}: ${git.stderr}`);
   process.exit(1);
 }
 fs.writeFileSync(path.join(wsDir, 'README.md'), `# ${title}\n`);
 
 console.log(slug);
-console.log(`criados: repos/${slug}/ (meta.json, ${contextoFile}, tasks/) e workspace/${slug}/ (git main, README.md)`);
-console.log('próximo passo: preencher 00-contexto.md e criar a primeira task com new-task.mjs');
+console.log(`created: repos/${slug}/ (meta.json, ${contextFile}, tasks/) and workspace/${slug}/ (git main, README.md)`);
+console.log('next step: fill in 00-context.md and create the first task with new-task.mjs');

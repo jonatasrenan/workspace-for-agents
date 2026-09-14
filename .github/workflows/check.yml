@@ -1,0 +1,59 @@
+# Deterministic checks only — no model in this runner. The review's judgment
+# happens on the machine of whoever is sending the change (tools/pr-review.mjs
+# builds the briefing there); this workflow only confirms that a review was
+# published for this exact content (the "pr-review gate" step), plus the two
+# checks any change here has to pass regardless: syntax and the test suite.
+# See "Before opening a PR" in README.md.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # pr-review.mjs needs the base branch's history to diff against
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      - name: syntax (node --check on every .mjs file, plus the one script the glob misses)
+        run: |
+          set -e
+          files=$(git ls-files '*.mjs')
+          files="$files viewer/public/app.js"
+          for f in $files; do
+            echo "-- $f"
+            node --check "$f"
+          done
+
+      - name: tests (the explicit file list — --test does not expand a directory on every Node version)
+        run: |
+          set -e
+          files=$(cd tools && ls *.test.mjs 2>/dev/null || true)
+          if [ -z "$files" ]; then
+            echo "no test files found — tools/*.test.mjs expanded to nothing (failing, not passing silently)" >&2
+            exit 1
+          fi
+          list=""
+          for f in $files; do list="$list tools/$f"; done
+          node --test $list
+
+      - name: pr-review gate (a published review must match this exact content)
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node tools/pr-review.mjs verify \
+            --pr "${{ github.event.pull_request.number }}" \
+            --head "${{ github.event.pull_request.head.sha }}"

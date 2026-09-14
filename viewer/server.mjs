@@ -1,17 +1,18 @@
-// Viewer do Workspace for Agents.
-// Zero dependências: serve o frontend, expõe repos/tasks como JSON (incluindo
-// mensagens, logs, custos de cada task e os agentes do repo), aceita respostas do humano
-// via POST /api/bus e notifica mudanças de arquivo via SSE para o painel
-// atualizar sozinho.
-// Escuta só em loopback (127.0.0.1) por padrão — o painel e o POST /api/bus não
-// ficam expostos à rede local. Override opcional via env: HOST=0.0.0.0 (ou outro
-// endereço) e PORT=<porta>.
+// Workspace for Agents viewer.
+// Zero dependencies: serves the frontend, exposes repos/tasks as JSON (including
+// messages, logs, costs of each task and the repo's agents), accepts human replies
+// via POST /api/bus and notifies file changes via SSE so the panel
+// updates itself.
+// Listens only on loopback (127.0.0.1) by default — the panel and the POST /api/bus
+// are not exposed to the local network. Optional override via env: HOST=0.0.0.0 (or
+// another address) and PORT=<port>.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { TEMPLATE_BY_FILE } from '../tools/templates.mjs';
+import { questionStates, openQuestions, refIndex, newId } from '../tools/questions.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -25,9 +26,9 @@ const SHARES_FILE = path.join(ROOT, '.shares.json');
 const PORT = Number(process.env.PORT || 4500);
 const HOST = process.env.HOST || '127.0.0.1';
 
-// Este arquivo é servidor E módulo: o tools/share.mjs importa buildState() para
-// montar o state da página compartilhada sem subir um segundo servidor. Só o uso
-// direto (`node viewer/server.mjs`) escuta porta, observa arquivos e republica.
+// This file is both server AND module: tools/share.mjs imports buildState() to
+// build the shared page's state without spinning up a second server. Only direct
+// use (`node viewer/server.mjs`) listens on a port, watches files and republishes.
 const IS_SERVER = process.argv[1] ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) : false;
 
 const MIME = {
@@ -69,7 +70,7 @@ function readJson(p) {
   }
 }
 
-// .jsonl tolerante: arquivo ausente => []; linhas inválidas são ignoradas.
+// tolerant .jsonl: missing file => []; invalid lines are ignored.
 function readJsonl(p) {
   const raw = readIfExists(p);
   if (raw == null) return [];
@@ -87,9 +88,9 @@ function readJsonl(p) {
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
-// stub: arquivo ainda igual ao template que o gerou (sem substância além do
-// esqueleto). Fallback (cobre versões antigas de template e arquivos fora do
-// padrão): só headings + linhas vazias/placeholder ("_(ainda não definido)_",
+// stub: file still identical to the template that generated it (no substance beyond
+// the skeleton). Fallback (covers older template versions and out-of-pattern files):
+// only headings + empty/placeholder lines ("_(not yet defined)_",
 // "-", "|---|") = stub.
 function isStub(name, content) {
   const tpl = TEMPLATE_BY_FILE[name];
@@ -97,26 +98,30 @@ function isStub(name, content) {
   for (const line of content.split('\n')) {
     const l = line.trim();
     if (!l || l === '-' || /^#{1,6}\s/.test(l)) continue;
-    if (/^_?\(.*\)_?$/.test(l)) continue; // placeholder "(ainda não definido)"
-    if (/^\|[\s|:-]*\|$/.test(l)) continue; // cabeçalho/divisor de tabela vazio
+    if (/^_?\(.*\)_?$/.test(l)) continue; // placeholder "(not yet defined)"
+    if (/^\|[\s|:-]*\|$/.test(l)) continue; // empty table header/divider
     return false;
   }
   return true;
 }
 
-// Mensagens kind question|decision endereçadas ao humano ainda sem resposta:
-// heurística simples — nenhuma mensagem POSTERIOR com from="humano" na task.
-function awaitingMessages(messages) {
-  let lastHuman = -1;
-  messages.forEach((m, i) => {
-    if (m.from === 'humano') lastHuman = i;
+// question|decision messages addressed to the human, annotated with their
+// linked state (tools/questions.mjs — not a positional guess): each message
+// gets a `.question` property when it's a question at all.
+function annotateQuestions(messages) {
+  const states = questionStates(messages);
+  return messages.map((m, i) => {
+    const e = states[i];
+    if (!e) return m;
+    const closer = e.closedByIndex != null ? messages[e.closedByIndex] : null;
+    return { ...m, question: { state: e.state, closedBy: closer ? { from: closer.from, body: closer.body, ts: closer.ts } : null } };
   });
-  return messages.filter((m, i) => i > lastHuman && m.to === 'humano' && (m.kind === 'question' || m.kind === 'decision'));
 }
 
-// Riscos aceitos da task (parse leve de 30-review.md, melhor esforço): bullets
-// sob um heading contendo "Riscos aceitos" ou "Observações gerais" — até o
-// próximo heading. Linhas "-" vazias (placeholder de template) são ignoradas.
+// Accepted risks of the task (light parse of 30-review.md, best effort): bullets
+// under a heading containing "accepted risks" or "general notes"/"general
+// observations" — up to the next heading. Empty "-" lines (template placeholder)
+// are ignored.
 function readAcceptedRisks(dir) {
   const raw = readIfExists(path.join(dir, '30-review.md'));
   if (raw == null) return [];
@@ -125,7 +130,7 @@ function readAcceptedRisks(dir) {
   for (const line of raw.split('\n')) {
     const h = /^#{1,6}\s+(.*)$/.exec(line);
     if (h) {
-      inSec = /riscos aceitos|observa[cç][oõ]es gerais/i.test(h[1]);
+      inSec = /accepted risks|general (notes|observations)/i.test(h[1]);
       continue;
     }
     if (!inSec) continue;
@@ -135,10 +140,10 @@ function readAcceptedRisks(dir) {
   return out;
 }
 
-// --- tempo da task ---
-// Início real da task = MENOR ts entre messages/logs/costs; fim = maior ts.
-// meta.created/updated não servem de cronômetro (granularidade de dia), então
-// task sem nenhum evento simplesmente não tem tempo (start: null).
+// --- task timing ---
+// Real task start = SMALLEST ts among messages/logs/costs; end = largest ts.
+// meta.created/updated don't work as a stopwatch (day granularity), so a
+// task with no events at all simply has no timing (start: null).
 function eventBounds(streams) {
   let first = null;
   let last = null;
@@ -153,18 +158,20 @@ function eventBounds(streams) {
   return { first, last };
 }
 
-// Tempo-alvo em minutos: meta.tempo_alvo_min tem precedência; senão, a partir da
-// marca "Tempo-alvo" no 00-enunciado.md (heading "## Tempo-alvo" com o valor na
-// linha seguinte, ou inline "**Tempo-alvo: 20 minutos.**") pega o PRIMEIRO número
-// seguido de "min". A varredura para no próximo heading — números de marcos
-// que vivem em outra seção não contaminam o alvo.
+// Target time in minutes: meta.target_time_min takes precedence; otherwise, starting
+// from the "Target time" marker in 00-brief.md (heading "## Target time" with the
+// value on the next line, or inline "**Target time: 20 minutes.**") takes the FIRST
+// number followed by "min". The scan stops at the next heading — numbers from
+// milestones living in another section don't contaminate the target.
+// The Portuguese marker ("Tempo-alvo") is still recognized: artifacts written
+// before the rename keep their target time in the panel.
 function readTargetMin(dir, meta) {
-  const fromMeta = Number(meta?.tempo_alvo_min);
+  const fromMeta = Number(meta?.target_time_min ?? meta?.tempo_alvo_min);
   if (Number.isFinite(fromMeta) && fromMeta > 0) return fromMeta;
-  const raw = readIfExists(path.join(dir, '00-enunciado.md'));
+  const raw = readIfExists(path.join(dir, '00-brief.md'));
   if (raw == null) return null;
   const lines = raw.split('\n');
-  const i = lines.findIndex((l) => /tempo[\s-]*alvo/i.test(l));
+  const i = lines.findIndex((l) => /target[\s-]*time|tempo[\s-]*alvo/i.test(l));
   if (i < 0) return null;
   for (let j = i; j < Math.min(lines.length, i + 12); j++) {
     if (j > i && /^#{1,6}\s/.test(lines[j])) break;
@@ -174,11 +181,11 @@ function readTargetMin(dir, meta) {
   return null;
 }
 
-// --- ping de saúde dos acessos (acessos.json) ---
-// Cache em memória com TTL ~10s, atualizado FORA do ciclo da request: /api/state
-// devolve o último resultado conhecido (up: true|false|null) e agenda a
-// verificação em background quando o cache está velho — a resposta nunca espera
-// o ping. Mudança de resultado dispara broadcast SSE para o painel atualizar o dot.
+// --- access health ping (access.json) ---
+// In-memory cache with ~10s TTL, updated OUTSIDE the request cycle: /api/state
+// returns the last known result (up: true|false|null) and schedules the
+// background check when the cache is stale — the response never waits on
+// the ping. A result change triggers an SSE broadcast so the panel updates the dot.
 const PING_TTL = 10_000;
 const PING_TIMEOUT = 1500;
 const pingCache = new Map(); // url -> { up, at, inflight }
@@ -197,9 +204,9 @@ function schedulePing(url) {
         const r = await fetch(url, { method, signal: ac.signal, redirect: 'manual' });
         clearTimeout(timer);
         r.body?.cancel?.().catch(() => {});
-        up = true; // qualquer resposta HTTP conta como vivo (mesmo 4xx/5xx)
+        up = true; // any HTTP response counts as alive (even 4xx/5xx)
         break;
-      } catch {} // erro de rede/timeout — tenta GET (servidores que rejeitam HEAD)
+      } catch {} // network/timeout error — try GET (servers that reject HEAD)
     }
     const cc = pingCache.get(url) || {};
     const changed = cc.at === undefined || cc.up !== up;
@@ -211,9 +218,9 @@ function schedulePing(url) {
   })();
 }
 
-// anexa up (do cache) a cada acesso e agenda refresh dos vencidos
-function withPing(acessos) {
-  return acessos.map((a) => {
+// attaches up (from cache) to each access entry and schedules a refresh for stale ones
+function withPing(accesses) {
+  return accesses.map((a) => {
     const url = typeof a.url === 'string' && /^https?:\/\//i.test(a.url) ? a.url : null;
     let up = null;
     if (url) {
@@ -225,9 +232,9 @@ function withPing(acessos) {
   });
 }
 
-// .claude/agents/<nome>.md → { nome: { description, resumo } }
-// description vem do frontmatter YAML plano; resumo = primeiro parágrafo do corpo.
-// Diretório/arquivo ausente ou sem frontmatter: tolerado (entrada some ou fica parcial).
+// .claude/agents/<name>.md → { name: { description, resumo } }
+// description comes from the plain YAML frontmatter; resumo = first paragraph of the body.
+// Missing directory/file or no frontmatter: tolerated (entry disappears or stays partial).
 function readAgentDefs() {
   const defs = {};
   let files = [];
@@ -269,19 +276,19 @@ function sumTokens(costs) {
   return t;
 }
 
-// tools/prices.json (opcional): { "<modelo>": { "in": USD/1M in, "out": USD/1M out } | USD/1M total, "default": ... }
-// Sem arquivo (ou sem preço para o modelo da linha) => sem estimativa para aquela linha.
+// tools/prices.json (optional): { "<model>": { "in": USD/1M in, "out": USD/1M out } | USD/1M total, "default": ... }
+// No file (or no price for the line's model) => no estimate for that line.
 function estimateUsd(costs, prices) {
   if (!prices || typeof prices !== 'object') return null;
   let usd = 0;
   let priced = false;
   for (const c of costs) {
-    // Mesmo critério do costs.mjs: match exato, senão a chave mais longa contida
-    // no nome do modelo, senão default; só total conhecido => média in/out.
-    let p = c.modelo != null ? prices[c.modelo] : undefined;
-    if (p == null && c.modelo != null) {
+    // Same criteria as costs.mjs: exact match, otherwise the longest key contained
+    // in the model name, otherwise default; only known total => in/out average.
+    let p = c.model != null ? prices[c.model] : undefined;
+    if (p == null && c.model != null) {
       const key = Object.keys(prices)
-        .filter((k) => k !== 'default' && c.modelo.includes(k))
+        .filter((k) => k !== 'default' && c.model.includes(k))
         .sort((a, b) => b.length - a.length)[0];
       if (key) p = prices[key];
     }
@@ -300,7 +307,7 @@ function estimateUsd(costs, prices) {
   return priced ? usd : null;
 }
 
-// branch + último commit do workspace do repo (opcional — null se não houver git)
+// branch + last commit of the repo's workspace (optional — null if no git)
 function gitInfo(wsDir) {
   try {
     if (!wsDir || !fs.existsSync(path.join(wsDir, '.git'))) return null;
@@ -309,33 +316,33 @@ function gitInfo(wsDir) {
     let lastCommit = null;
     try {
       lastCommit = execFileSync('git', ['log', '-1', '--format=%h %s'], opts).toString().trim();
-    } catch {} // repo sem commits ainda
+    } catch {} // repo with no commits yet
     return { branch, lastCommit };
   } catch {
     return null;
   }
 }
 
-// --- commits do workspace por task (aba Diff) ---
-// Duas fontes, nesta ordem de precedência:
-//   (a) registro explícito: repos/<repo>/tasks/<nn>/commits.jsonl (tools/commits.mjs);
-//   (b) fallback temporal: commits do workspace cuja data (committer date) cai na
-//       janela da task — retrocobre tasks que nunca registraram nada.
-// Janela da task: [created, status concluida ? updated : agora]. meta.created/updated
-// têm granularidade de dia ("YYYY-MM-DD"): created abre no INÍCIO do dia e updated
-// fecha no FIM — senão uma task criada e concluída no mesmo dia teria janela nula.
-// Task sem created não participa do fallback (só mostra o que registrou).
+// --- workspace commits per task (Diff tab) ---
+// Two sources, in this precedence order:
+//   (a) explicit record: repos/<repo>/tasks/<nn>/commits.jsonl (tools/commits.mjs);
+//   (b) temporal fallback: workspace commits whose date (committer date) falls in the
+//       task's window — backfills tasks that never registered anything.
+// Task window: [created, status done ? updated : now]. meta.created/updated
+// have day granularity ("YYYY-MM-DD"): created opens at the START of the day and updated
+// closes at the END — otherwise a task created and completed on the same day would have a null window.
+// A task with no created does not participate in the fallback (only shows what it registered).
 //
-// REGRA DE ATRIBUIÇÃO (mesmo commit na janela de mais de uma task do repo):
-//   1. commit registrado em alguma task pertence SÓ a ela — o registro explícito vence
-//      a heurística e o commit some das janelas das demais;
-//   2. senão, fica com a task de janela mais ESTREITA que o contém (a mais específica);
-//   3. empate de largura (caso comum: duas tasks abertas no mesmo dia) → a primeira na
-//      ordem das tasks (prefixo numérico), isto é, a mais antiga ainda em aberto.
+// ATTRIBUTION RULE (same commit in the window of more than one task in the repo):
+//   1. a commit registered in some task belongs ONLY to it — the explicit record wins over
+//      the heuristic and the commit disappears from the other tasks' windows;
+//   2. otherwise, it goes to the task with the NARROWEST window that contains it (the most specific);
+//   3. tie in width (common case: two tasks opened on the same day) → the first in the
+//      task order (numeric prefix), i.e. the oldest still open.
 const DIFF_MAX_LINES = 1500;
 const GIT_TIMEOUT = 2000;
 const commitCache = new Map(); // `${wsDir}\0${hash}` -> { hash, shortHash, msg, date, stat, diff, ... }
-const COMMIT_CACHE_MAX = 800; // hash é imutável: nunca invalida, só limita o crescimento
+const COMMIT_CACHE_MAX = 800; // hash is immutable: never invalidated, only bounds growth
 
 function gitOut(wsDir, args) {
   return execFileSync('git', args, {
@@ -347,7 +354,7 @@ function gitOut(wsDir, args) {
   });
 }
 
-// "YYYY-MM-DD" (dia local) ou timestamp ISO completo; endOfDay só vale para o dia puro
+// "YYYY-MM-DD" (local day) or a full ISO timestamp; endOfDay only applies to the plain day
 function parseStamp(v, endOfDay) {
   if (typeof v !== 'string' || !v.trim()) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v.trim());
@@ -360,7 +367,7 @@ function parseStamp(v, endOfDay) {
   return Number.isNaN(t) ? null : t;
 }
 
-// detalhe de um commit (metadados + stat + diff), memoizado por hash
+// commit detail (metadata + stat + diff), memoized by hash
 function commitDetail(wsDir, hash) {
   const key = `${wsDir}\0${hash}`;
   if (commitCache.has(key)) return commitCache.get(key);
@@ -368,7 +375,7 @@ function commitDetail(wsDir, hash) {
   try {
     const meta = gitOut(wsDir, ['log', '-1', '--format=%H%x1f%ct%x1f%s', hash]).trim();
     const [full, ct, msg = ''] = meta.split('\x1f');
-    if (!full) throw new Error('sem metadados');
+    if (!full) throw new Error('no metadata');
     const stat = gitOut(wsDir, ['show', '--stat', '--format=', '--no-color', full]).replace(/\s+$/, '');
     const raw = gitOut(wsDir, ['show', '--format=', '--no-color', full]).replace(/\n$/, '');
     const lines = raw ? raw.split('\n') : [];
@@ -384,19 +391,19 @@ function commitDetail(wsDir, hash) {
       totalLines: lines.length,
     };
   } catch {
-    info = null; // hash sumiu (rebase/clone raso) ou git demorou demais — task segue sem ele
+    info = null; // hash disappeared (rebase/shallow clone) or git took too long — task carries on without it
   }
   if (commitCache.size >= COMMIT_CACHE_MAX) commitCache.delete(commitCache.keys().next().value);
   commitCache.set(key, info);
   return info;
 }
 
-// preenche task.commits (mais recente primeiro) em todas as tasks do repo
+// fills task.commits (most recent first) in all tasks of the repo
 function attachCommits(tasks, wsDir) {
   for (const t of tasks) t.commits = [];
   if (!tasks.length || !wsDir || !fs.existsSync(path.join(wsDir, '.git'))) return;
 
-  // (a) registrados — hash explícito vence qualquer janela
+  // (a) registered — explicit hash wins over any window
   const registered = new Map(); // hash -> [slug]
   for (const t of tasks) {
     for (const c of t._commitsJsonl || []) {
@@ -407,16 +414,16 @@ function attachCommits(tasks, wsDir) {
     }
   }
 
-  // (b) janelas temporais
+  // (b) temporal windows
   const now = Date.now();
   const windows = new Map(); // slug -> { start, end }
   for (const t of tasks) {
     const start = parseStamp(t.meta?.created, false);
-    if (start == null) continue; // sem created: não participa do fallback
-    // task concluída fecha no fim do dia do updated, mas nunca depois de agora — senão
-    // uma task concluída hoje teria janela mais LARGA que a irmã ainda aberta e roubaria
-    // os commits dela na regra 2.
-    const fim = t.status === 'concluida' ? parseStamp(t.meta?.updated, true) : null;
+    if (start == null) continue; // no created: doesn't participate in the fallback
+    // a completed task closes at the end of the updated day, but never after now — otherwise
+    // a task completed today would have a WIDER window than its still-open sibling and steal
+    // its commits under rule 2.
+    const fim = t.status === 'done' ? parseStamp(t.meta?.updated, true) : null;
     const end = fim == null ? now : Math.min(fim, now);
     if (end < start) continue;
     windows.set(t.slug, { start, end });
@@ -433,7 +440,7 @@ function attachCommits(tasks, wsDir) {
         `--until=${new Date(maxEnd).toISOString()}`,
         '--format=%H|%ct|%s',
       ]);
-    } catch {} // workspace sem commits / sem git válido — fallback vira vazio
+    } catch {} // workspace with no commits / no valid git — fallback ends up empty
     for (const line of log.split('\n')) {
       if (!line.trim()) continue;
       const i = line.indexOf('|');
@@ -441,12 +448,12 @@ function attachCommits(tasks, wsDir) {
       if (i < 0 || j < 0) continue;
       const hash = line.slice(0, i);
       const at = Number(line.slice(i + 1, j)) * 1000;
-      if (registered.has(hash)) continue; // regra 1: registro explícito manda
+      if (registered.has(hash)) continue; // rule 1: explicit record wins
       let best = null;
       for (const t of tasks) {
         const w = windows.get(t.slug);
         if (!w || at < w.start || at > w.end) continue;
-        // regra 2/3: janela mais estreita; empate fica com a primeira task (ordem numérica)
+        // rule 2/3: narrowest window; tie goes to the first task (numeric order)
         if (!best || w.end - w.start < best.w.end - best.w.start) best = { slug: t.slug, w };
       }
       if (best) byTask.get(best.slug).push(hash);
@@ -457,10 +464,10 @@ function attachCommits(tasks, wsDir) {
   for (const t of tasks) {
     const seen = new Set();
     t.commits = (byTask.get(t.slug) || [])
-      .filter((h) => (seen.has(h) ? false : seen.add(h))) // dedupe por hash
+      .filter((h) => (seen.has(h) ? false : seen.add(h))) // dedupe by hash
       .map((h) => commitDetail(wsDir, h))
       .filter(Boolean)
-      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // mais recente primeiro
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // most recent first
     delete t._commitsJsonl;
   }
 }
@@ -472,7 +479,7 @@ function readTasks(repoDir, prices, wsDir) {
     .readdirSync(tasksDir, { withFileTypes: true })
     .filter((d) => d.isDirectory())
     .map((d) => d.name)
-    .sort() // ordem = prefixo numérico <nn>-<slug>
+    .sort() // order = numeric prefix <nn>-<slug>
     .map((name) => {
       const dir = path.join(tasksDir, name);
       const meta = readMeta(dir);
@@ -487,15 +494,15 @@ function readTasks(repoDir, prices, wsDir) {
             return { name: f, content, stub: isStub(f, content) };
           });
       } catch {}
-      // painéis vivos: todos on-demand — ausência vira coleção vazia
+      // live panels: all on-demand — absence becomes an empty collection
       const messages = readJsonl(path.join(dir, 'messages.jsonl'));
       const logs = readJsonl(path.join(dir, 'logs.jsonl'));
       const costs = readJsonl(path.join(dir, 'costs.jsonl'));
-      // agents.json no nível da task é legado (a fonte atual é repos/<repo>/agents.json);
-      // mantido como fallback para dados antigos e retrocompatibilidade do /api/state
+      // agents.json at the task level is legacy (the current source is repos/<repo>/agents.json);
+      // kept as a fallback for old data and /api/state backward compatibility
       const agentsJson = readJson(path.join(dir, 'agents.json'));
       const agents = Array.isArray(agentsJson?.agents) ? agentsJson.agents : [];
-      // dag.json (opcional): null se ausente ou inválido (sem nodes[])
+      // dag.json (optional): null if missing or invalid (no nodes[])
       const dagJson = readJson(path.join(dir, 'dag.json'));
       const dag =
         dagJson && Array.isArray(dagJson.nodes)
@@ -503,16 +510,17 @@ function readTasks(repoDir, prices, wsDir) {
           : null;
       const tokens = sumTokens(costs);
       const usd = estimateUsd(costs, prices);
-      const awaitingMsgs = awaitingMessages(messages).map((m) => ({ from: m.from, kind: m.kind, body: m.body }));
-      // tempo da task: janela real dos eventos + tempo-alvo do enunciado. running =
-      // task ainda não concluída com pelo menos um evento (o painel conta o decorrido).
+      const awaitingMsgs = openQuestions(messages).map((m) => ({ id: m.id, from: m.from, kind: m.kind, body: m.body }));
+      const messagesWithQuestions = annotateQuestions(messages);
+      // task timing: real event window + target time from the statement. running =
+      // task not yet completed with at least one event (the panel counts the elapsed time).
       const status = meta.status || 'todo';
       const { first, last } = eventBounds([messages, logs, costs]);
       const timing = {
         start: first == null ? null : new Date(first).toISOString(),
         last: last == null ? null : new Date(last).toISOString(),
         targetMin: readTargetMin(dir, meta),
-        running: first != null && status !== 'concluida',
+        running: first != null && status !== 'done',
       };
       return {
         slug: name,
@@ -520,7 +528,7 @@ function readTasks(repoDir, prices, wsDir) {
         status,
         meta,
         files,
-        messages,
+        messages: messagesWithQuestions,
         logs,
         costs,
         agents,
@@ -531,13 +539,13 @@ function readTasks(repoDir, prices, wsDir) {
         awaiting: awaitingMsgs.length,
         awaitingMsgs,
         risks: readAcceptedRisks(dir),
-        // commits.jsonl (tools/commits.mjs) — insumo do attachCommits, some do payload
+        // commits.jsonl (tools/commits.mjs) — input for attachCommits, dropped from the payload
         _commitsJsonl: readJsonl(path.join(dir, 'commits.jsonl')),
       };
     });
-  // depends_on do meta.json: refs por nome de diretório da task ou prefixo ("01"),
-  // resolvidas contra as tasks deste repo. Dep não-concluída => task bloqueada;
-  // ref não resolvida não bloqueia (aparece marcada como missing).
+  // depends_on from meta.json: refs by task directory name or prefix ("01"),
+  // resolved against this repo's tasks. An unfinished dep => blocked task;
+  // an unresolved ref doesn't block (shows up marked as missing).
   const resolveRef = (ref, self) =>
     [
       tasks.find((t) => t.slug === ref),
@@ -554,15 +562,15 @@ function readTasks(repoDir, prices, wsDir) {
         ? { slug: dep.slug, title: dep.title, status: dep.status }
         : { slug: ref, title: ref, status: null, missing: true };
     });
-    t.blocked = t.depends_on.some((d) => !d.missing && d.status !== 'concluida');
+    t.blocked = t.depends_on.some((d) => !d.missing && d.status !== 'done');
   }
-  attachCommits(tasks, wsDir); // aba Diff: registrados + fallback temporal, atribuídos entre as tasks
+  attachCommits(tasks, wsDir); // Diff tab: registered + temporal fallback, attributed among tasks
   return tasks;
 }
 
 function readRepos() {
   if (!fs.existsSync(REPOS_DIR)) return [];
-  const prices = readJson(PRICES_FILE); // opcional — null se não existir/inválido
+  const prices = readJson(PRICES_FILE); // optional — null if missing/invalid
   return fs
     .readdirSync(REPOS_DIR, { withFileTypes: true })
     .filter((d) => d.isDirectory())
@@ -571,39 +579,39 @@ function readRepos() {
       const meta = readMeta(dir);
       const wsDir = meta.workspace ? path.resolve(ROOT, meta.workspace) : path.join(WORKSPACE_DIR, d.name);
       const tasks = readTasks(dir, prices, wsDir);
-      // agents.json no nível do repo (formato { agents: [...] }, cada agente pode
-      // trazer last_task = task em que trabalhou por último) — opcional, ausência vira []
+      // agents.json at the repo level (format { agents: [...] }, each agent can
+      // carry last_task = task it last worked on) — optional, absence becomes []
       const agentsJson = readJson(path.join(dir, 'agents.json'));
       const agents = Array.isArray(agentsJson?.agents) ? agentsJson.agents : [];
-      // estado.json / acessos.json (modelo push, escritos pelos agentes) — opcionais,
-      // ausência/inválido vira null / []. Cada acesso ganha up: true|false|null do ping.
-      const estadoJson = readJson(path.join(dir, 'estado.json'));
-      const estado = estadoJson && typeof estadoJson === 'object' && !Array.isArray(estadoJson) ? estadoJson : null;
-      const acessosJson = readJson(path.join(dir, 'acessos.json'));
-      const acessos = withPing(
-        (Array.isArray(acessosJson?.acessos) ? acessosJson.acessos : []).filter(
+      // state.json / access.json (push model, written by agents) — optional,
+      // missing/invalid becomes null / []. Each access gets up: true|false|null from the ping.
+      const stateJson = readJson(path.join(dir, 'state.json'));
+      const state = stateJson && typeof stateJson === 'object' && !Array.isArray(stateJson) ? stateJson : null;
+      const accessJson = readJson(path.join(dir, 'access.json'));
+      const accesses = withPing(
+        (Array.isArray(accessJson?.accesses) ? accessJson.accesses : []).filter(
           (a) => a && typeof a === 'object' && !Array.isArray(a)
         )
       );
-      const counts = { todo: 0, 'em-andamento': 0, concluida: 0 };
+      const counts = { todo: 0, 'in-progress': 0, done: 0 };
       for (const t of tasks) if (t.status in counts) counts[t.status]++;
-      // progresso agregado do repo: tasks concluídas, nós de DAG e verificações (guardrails)
+      // repo's aggregated progress: completed tasks, DAG nodes and checks (guardrails)
       const progress = {
-        tasks: { done: counts.concluida, total: tasks.length },
+        tasks: { done: counts.done, total: tasks.length },
         dag: { done: 0, total: 0 },
-        gr: { pass: 0, falha: 0, aceito: 0, pendente: 0 },
+        gr: { pass: 0, fail: 0, accepted: 0, pending: 0 },
       };
       for (const t of tasks) {
         for (const n of t.dag?.nodes || []) {
           progress.dag.total++;
-          if (n.status === 'concluida') progress.dag.done++;
+          if (n.status === 'done') progress.dag.done++;
           for (const g of n.guardrails || []) {
             if (!g || typeof g !== 'object') continue;
-            progress.gr[g.status in progress.gr ? g.status : 'pendente']++;
+            progress.gr[g.status in progress.gr ? g.status : 'pending']++;
           }
         }
       }
-      // agregados de tokens/custo/aguardando-humano do repo = soma das tasks
+      // repo's token/cost/awaiting-human aggregates = sum of the tasks
       const tokens = { in: 0, out: 0, total: 0 };
       let usd = null;
       let awaiting = 0;
@@ -614,7 +622,7 @@ function readRepos() {
         awaiting += t.awaiting;
         if (t.usd != null) usd = (usd ?? 0) + t.usd;
       }
-      // mtime mais recente do repo (arquivos diretos + tasks) — para ordenar por atividade
+      // repo's most recent mtime (direct files + tasks) — used to sort by activity
       let mtime = 0;
       const scan = (p) => {
         try {
@@ -635,10 +643,10 @@ function readRepos() {
         updated: meta.updated,
         workspace: meta.workspace || `workspace/${d.name}`,
         git: gitInfo(wsDir),
-        context: readIfExists(path.join(dir, '00-contexto.md')),
+        context: readIfExists(path.join(dir, '00-context.md')),
         agents,
-        estado,
-        acessos,
+        state,
+        accesses,
         progress,
         tasks,
         counts,
@@ -661,13 +669,13 @@ export function buildState() {
     totals.awaiting += r.awaiting;
     if (r.usd != null) totals.usd = (totals.usd ?? 0) + r.usd;
   }
-  // guardrails/pool.json (opcional): resolve título/verificação dos guardrails da DAG
+  // guardrails/pool.json (optional): resolves title/check for the DAG's guardrails
   const pool = readJson(path.join(GUARDRAILS_DIR, 'pool.json'));
   const guardrailPool = Array.isArray(pool?.guardrails) ? pool.guardrails : [];
   return { repos, totals, guardrailPool, agentDefs: readAgentDefs() };
 }
 
-// --- bus: resposta do humano vira linha em messages.jsonl da task ---
+// --- bus: human reply becomes a line in the task's messages.jsonl ---
 function handleBus(req, res) {
   let raw = '';
   req.on('data', (c) => {
@@ -679,25 +687,35 @@ function handleBus(req, res) {
     try {
       b = JSON.parse(raw);
     } catch {
-      return json(res, 400, { error: 'body não é JSON válido' });
+      return json(res, 400, { error: 'body is not valid JSON' });
     }
     const { repo, task, from, to, kind, body } = b || {};
-    if (typeof repo !== 'string' || !repo || /[/\\]|\.\./.test(repo)) return json(res, 400, { error: 'repo inválido' });
-    if (typeof task !== 'string' || !task || /[/\\]|\.\./.test(task)) return json(res, 400, { error: 'task inválida' });
-    if (from !== 'humano') return json(res, 400, { error: 'from deve ser "humano"' });
-    if (typeof to !== 'string' || !to) return json(res, 400, { error: 'to é obrigatório' });
-    if (!MSG_KINDS.includes(kind)) return json(res, 400, { error: `kind deve ser um de: ${MSG_KINDS.join(', ')}` });
-    if (typeof body !== 'string' || !body.trim()) return json(res, 400, { error: 'body é obrigatório' });
+    if (typeof repo !== 'string' || !repo || /[/\\]|\.\./.test(repo)) return json(res, 400, { error: 'invalid repo' });
+    if (typeof task !== 'string' || !task || /[/\\]|\.\./.test(task)) return json(res, 400, { error: 'invalid task' });
+    if (from !== 'human') return json(res, 400, { error: 'from must be "human"' });
+    if (typeof to !== 'string' || !to) return json(res, 400, { error: 'to is required' });
+    if (!MSG_KINDS.includes(kind)) return json(res, 400, { error: `kind must be one of: ${MSG_KINDS.join(', ')}` });
+    if (typeof body !== 'string' || !body.trim()) return json(res, 400, { error: 'body is required' });
     const dir = path.join(REPOS_DIR, repo, 'tasks', task);
-    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return json(res, 400, { error: 'task não existe' });
-    const msg = { ts: new Date().toISOString(), from: 'humano', to, kind, body };
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return json(res, 400, { error: 'task does not exist' });
+    const messagesFile = path.join(dir, 'messages.jsonl');
+    const existing = readJsonl(messagesFile);
+    if (b.meta?.answers !== undefined && b.meta?.dismisses !== undefined) {
+      return json(res, 400, { error: 'meta cannot carry both "answers" and "dismisses"' });
+    }
+    const ref = b.meta?.answers ?? b.meta?.dismisses;
+    if (ref !== undefined && refIndex(existing, ref) === -1) {
+      return json(res, 400, { error: `"${b.meta.answers !== undefined ? 'answers' : 'dismisses'}" references a message that does not exist: "${ref}"` });
+    }
+    const ts = new Date().toISOString();
+    const msg = { id: newId(ts), ts, from: 'human', to, kind, body };
     if (b.meta && typeof b.meta === 'object') msg.meta = b.meta;
     try {
-      fs.appendFileSync(path.join(dir, 'messages.jsonl'), JSON.stringify(msg) + '\n');
+      fs.appendFileSync(messagesFile, JSON.stringify(msg) + '\n');
     } catch (e) {
       return json(res, 500, { error: e.message });
     }
-    broadcastChange(); // reforço — o watcher de repos/ também dispara no append
+    broadcastChange(); // extra nudge — the repos/ watcher also fires on the append
     return json(res, 200, { ok: true });
   });
 }
@@ -710,7 +728,7 @@ function sseWrite(payload) {
     try {
       res.write(payload);
     } catch {
-      clients.delete(res); // socket já morto — remove sem derrubar o server
+      clients.delete(res); // socket already dead — remove without taking down the server
     }
   }
 }
@@ -718,14 +736,14 @@ function broadcastChange() {
   clearTimeout(debounce);
   debounce = setTimeout(() => {
     sseWrite(`data: ${JSON.stringify({ at: Date.now() })}\n\n`);
-    scheduleRepublish(); // repos com share ativo saem atualizados sozinhos
+    scheduleRepublish(); // repos with an active share leave updated on their own
   }, 150);
 }
 
-// --- auto-republish dos repos compartilhados (tools/share.mjs) ---
-// Registro em .shares.json (raiz): { "shares": { "<repo>": { uuid, url, auto, custos } } }.
-// Repo com auto !== false é re-publicado pelo próprio servidor quando muda — o
-// agente nunca faz deploy manualmente. `share.mjs <repo> --off` pausa; `--delete` remove.
+// --- auto-republish of shared repos (tools/share.mjs) ---
+// Registry in .shares.json (root): { "shares": { "<repo>": { uuid, url, auto, costs } } }.
+// A repo with auto !== false is re-published by the server itself when it changes — the
+// agent never deploys manually. `share.mjs <repo> --off` pauses; `--delete` removes.
 const publishState = new Map(); // slug -> { publishedAt, running, timer }
 
 function activeShares() {
@@ -734,9 +752,9 @@ function activeShares() {
   return Object.keys(shares).filter((slug) => shares[slug] && shares[slug].auto !== false);
 }
 
-// mtime do que a página compartilhada mostra: metadados do repo (repos/<slug>) +
-// o .git do workspace (commits novos mudam a aba Diff). Barato o bastante para
-// rodar a cada rajada de mudança.
+// mtime of what the shared page shows: repo metadata (repos/<slug>) +
+// the workspace's .git (new commits change the Diff tab). Cheap enough to
+// run on every burst of change.
 function shareMtime(slug) {
   let m = 0;
   const scan = (p) => {
@@ -758,7 +776,7 @@ function shareMtime(slug) {
 }
 
 function scheduleRepublish() {
-  if (!IS_SERVER) return; // importado como módulo (share.mjs): nunca republica sozinho
+  if (!IS_SERVER) return; // imported as a module (share.mjs): never republishes on its own
   for (const slug of activeShares()) {
     const st = publishState.get(slug) ?? { publishedAt: 0, running: false, timer: null };
     publishState.set(slug, st);
@@ -776,28 +794,27 @@ function scheduleRepublish() {
         st.running = false;
         if (code === 0) {
           st.publishedAt = at;
-          console.log(`↻ share republicado: ${slug}`);
-        } else console.log(`⚠ share falhou (${code}): ${slug} — ${errBuf.trim().split('\n').pop() ?? 'sem stderr'}`);
-        scheduleRepublish(); // pega mudanças ocorridas durante o publish
+          console.log(`↻ share republished: ${slug}`);
+        } else console.log(`⚠ share failed (${code}): ${slug} — ${errBuf.trim().split('\n').pop() ?? 'no stderr'}`);
+        scheduleRepublish(); // picks up changes that happened during the publish
       });
-    }, 5000); // debounce: espera a rajada de writes do agente assentar
+    }, 5000); // debounce: waits for the agent's write burst to settle
   }
 }
-// Heartbeat: comentário SSE a cada 15s. Sem tráfego, um socket morto (sleep da
-// máquina, server trocado) fica "aberto" indefinidamente dos dois lados — o
-// navegador nunca dispara onerror e perde broadcasts para sempre. Com o
-// heartbeat o TCP detecta a morte, o EventSource reconecta e o onopen do
-// frontend re-sincroniza o estado.
+// Heartbeat: SSE comment every 15s. With no traffic, a dead socket (machine sleep,
+// server swap) stays "open" indefinitely on both sides — the browser never fires
+// onerror and misses broadcasts forever. With the heartbeat, TCP detects the death,
+// EventSource reconnects and the frontend's onopen re-syncs the state.
 if (IS_SERVER) setInterval(() => sseWrite(':hb\n\n'), 15000).unref();
 
-// repos/ e workspace/ são criados por outros processos — o viewer não cria nada.
-// Enquanto o diretório não existir, tenta anexar o watcher a cada 2s.
+// repos/ and workspace/ are created by other processes — the viewer creates nothing.
+// While the directory doesn't exist, it retries attaching the watcher every 2s.
 function watchWhenReady(dir) {
   const attach = () => {
     if (!fs.existsSync(dir)) return false;
     try {
       fs.watch(dir, { recursive: true }, broadcastChange);
-      broadcastChange(); // diretório acabou de aparecer — painel recarrega
+      broadcastChange(); // directory just appeared — panel reloads
       return true;
     } catch {
       return false;
@@ -833,15 +850,15 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // estáticos
+  // static files
   let file = url.pathname === '/' ? '/index.html' : url.pathname;
   const filePath = path.join(PUBLIC_DIR, path.normalize(file));
   if (!filePath.startsWith(PUBLIC_DIR) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
     res.writeHead(404);
     return res.end('404');
   }
-  // no-cache: o navegador revalida a cada load — mudança em app.js/style.css
-  // vale no próximo refresh, sem hard-refresh
+  // no-cache: the browser revalidates on every load — a change in app.js/style.css
+  // takes effect on the next refresh, without a hard-refresh
   res.writeHead(200, {
     'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream',
     'Cache-Control': 'no-cache',
@@ -851,7 +868,7 @@ const server = http.createServer((req, res) => {
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.log(`porta ${PORT} já em uso — o viewer provavelmente já está rodando em http://localhost:${PORT}`);
+    console.log(`port ${PORT} already in use — the viewer is probably already running at http://localhost:${PORT}`);
     process.exit(0);
   }
   throw err;
@@ -859,7 +876,7 @@ server.on('error', (err) => {
 
 if (IS_SERVER) {
   server.listen(PORT, HOST, () => {
-    console.log(`viewer em http://localhost:${PORT} (bind: ${HOST})`);
-    scheduleRepublish(); // repo compartilhado nasce atualizado quando o viewer sobe
+    console.log(`viewer at http://localhost:${PORT} (bind: ${HOST})`);
+    scheduleRepublish(); // a shared repo comes up already updated when the viewer starts
   });
 }

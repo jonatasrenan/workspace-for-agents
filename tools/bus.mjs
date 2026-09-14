@@ -1,22 +1,29 @@
-// Barramento de mensagens/logs de uma task — IO mecânico, a LLM nunca datilografa JSONL.
-// Uso:
-//   node tools/bus.mjs post <repo> <task> --from X --to Y --kind K [--meta '<json>'] "corpo"
-//   node tools/bus.mjs log  <repo> <task> --level L --source S "corpo"   (corpo "-" lê stdin; cada linha vira um registro)
+// Message/log bus for a task — mechanical IO, the LLM never hand-types JSONL.
+// Usage:
+//   node tools/bus.mjs post <repo> <task> --from X --to Y --kind K [--meta '<json>'] "body"
+//   node tools/bus.mjs log  <repo> <task> --level L --source S "body"   (body "-" reads stdin; each line becomes a record)
 //   node tools/bus.mjs read <repo> <task> [--kind K] [--to Y] [--since <ISO>] [--tail N]
-//   node tools/bus.mjs agents <repo> [<task>]   (<task> opcional: filtra a exibição por last_task)
-// <task> aceita o nome completo do diretório OU só o prefixo numérico ("01").
-// Escreve em repos/<repo>/tasks/<task>/: messages.jsonl, logs.jsonl (on-demand).
-// O registro de agentes vive no nível do REPO: repos/<repo>/agents.json — cada agente
-// carrega "last_task" = task do post de status que o atualizou por último.
-// kind=status com meta.state (spawned|working|done) faz o upsert nesse arquivo (por name=from).
-// Compatibilidade: agents.json em nível de task (criado por versão antiga) é ignorado
-// pelo upsert — só o arquivo do repo é lido/escrito daqui em diante.
+//   node tools/bus.mjs agents <repo> [<task>]   (<task> optional: filters the display by last_task)
+// <task> accepts the full directory name OR just the numeric prefix ("01").
+// Writes to repos/<repo>/tasks/<task>/: messages.jsonl, logs.jsonl (on-demand).
+// Every message is born with a stable "id" (printed on `post` and on `read`).
+// A reply to a question|decision addressed to human closes it by pointing
+// AT that id — --meta '{"answers":"<id>"}' (answered) or
+// '{"dismisses":"<id>"}' (declined) — never by just being the next message; see
+// tools/questions.mjs for the rule. A reference that doesn't resolve to an
+// existing message is refused (exit 1), nothing is written.
+// The agent registry lives at the REPO level: repos/<repo>/agents.json — each agent
+// carries "last_task" = the task of the status post that last updated it.
+// kind=status with meta.state (spawned|working|done) upserts that file (keyed by name=from).
+// Compatibility: a task-level agents.json (created by an older version) is ignored
+// by the upsert — from now on only the repo-level file is read/written.
 import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJson, updateJson } from './jsonfile.mjs';
-import { fileURLToPath } from 'node:url';
+import { stateRoot } from './root.mjs';
+import { newId, refIndex } from './questions.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = stateRoot();
 const KINDS = ['report', 'question', 'decision', 'approval', 'status'];
 const LEVELS = ['debug', 'info', 'warn', 'error'];
 const STATES = ['spawned', 'working', 'done'];
@@ -33,8 +40,8 @@ function parseArgs(argv, valueFlags) {
     const a = argv[i];
     if (a.startsWith('--')) {
       const name = a.slice(2);
-      if (!valueFlags.includes(name)) die(`flag desconhecida: --${name} (aceitas: ${valueFlags.map((f) => `--${f}`).join(', ')})`);
-      if (i + 1 >= argv.length) die(`--${name} exige um valor`);
+      if (!valueFlags.includes(name)) die(`unknown flag: --${name} (accepted: ${valueFlags.map((f) => `--${f}`).join(', ')})`);
+      if (i + 1 >= argv.length) die(`--${name} requires a value`);
       flags[name] = argv[++i];
     } else {
       pos.push(a);
@@ -43,28 +50,28 @@ function parseArgs(argv, valueFlags) {
   return { flags, pos };
 }
 
-// Resolve <repo> com erro que lista as opções.
+// Resolves <repo>, with an error that lists the options.
 function resolveRepo(repoSlug) {
-  if (!repoSlug) die('falta argumento: <repo>');
+  if (!repoSlug) die('missing argument: <repo>');
   const reposDir = path.join(ROOT, 'repos');
   const repoDir = path.join(reposDir, repoSlug);
   if (!fs.existsSync(path.join(repoDir, 'meta.json'))) {
     const existentes = fs.existsSync(reposDir) ? fs.readdirSync(reposDir).filter((d) => !d.startsWith('.')) : [];
-    die(`repo não encontrado: ${repoSlug}${existentes.length ? ` — existentes: ${existentes.join(', ')}` : ' — nenhum repo criado ainda (use new-repo.mjs)'}`);
+    die(`repo not found: ${repoSlug}${existentes.length ? ` — existing: ${existentes.join(', ')}` : ' — no repo created yet (use new-repo.mjs)'}`);
   }
   return repoDir;
 }
 
-// Resolve <repo> e <task> (nome completo ou prefixo "01") com erros que listam as opções.
+// Resolves <repo> and <task> (full name or "01" prefix), with errors that list the options.
 function resolveTask(repoSlug, taskArg) {
-  if (!repoSlug || !taskArg) die('faltam argumentos: <repo> <task>');
+  if (!repoSlug || !taskArg) die('missing arguments: <repo> <task>');
   const repoDir = resolveRepo(repoSlug);
   const tasksDir = path.join(repoDir, 'tasks');
   const tasks = fs.existsSync(tasksDir) ? fs.readdirSync(tasksDir).filter((d) => /^\d{2}-/.test(d)).sort() : [];
   const prefixo = /^\d+$/.test(taskArg) ? taskArg.padStart(2, '0') : null;
   const match = tasks.find((d) => d === taskArg) ?? (prefixo && tasks.find((d) => d.startsWith(`${prefixo}-`)));
   if (!match) {
-    die(`task não encontrada: "${taskArg}" em repos/${repoSlug}/tasks${tasks.length ? ` — existentes: ${tasks.join(', ')}` : ' — nenhuma task criada ainda (use new-task.mjs)'}`);
+    die(`task not found: "${taskArg}" in repos/${repoSlug}/tasks${tasks.length ? ` — existing: ${tasks.join(', ')}` : ' — no task created yet (use new-task.mjs)'}`);
   }
   return { taskDir: path.join(tasksDir, match), taskName: match, repoSlug, repoDir };
 }
@@ -73,42 +80,57 @@ function appendJsonl(file, objs) {
   fs.appendFileSync(file, objs.map((o) => JSON.stringify(o) + '\n').join(''));
 }
 
+function readMessages(file) {
+  if (!fs.existsSync(file)) return [];
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((l, i) => {
+      try {
+        return JSON.parse(l);
+      } catch {
+        die(`line ${i + 1} of messages.jsonl is not valid JSON`);
+      }
+    });
+}
+
 function touchMeta(taskDir) {
   const metaPath = path.join(taskDir, 'meta.json');
   if (!fs.existsSync(metaPath)) return;
   updateJson(metaPath, null, (meta) => {
-    if (!meta) return undefined; // meta ilegível: não é este comando que vai reescrevê-lo
+    if (!meta) return undefined; // meta unreadable: this command won't be the one to rewrite it
     meta.updated = new Date().toISOString().slice(0, 10);
     return meta;
   });
 }
 
-// Upsert no registro de agentes do REPO (repos/<repo>/agents.json).
-// Um agents.json antigo em nível de task, se ainda existir, é simplesmente ignorado.
+// Upsert into the REPO's agent registry (repos/<repo>/agents.json).
+// An old task-level agents.json, if it still exists, is simply ignored.
 function upsertAgent(repoDir, taskName, name, state, ts, meta) {
   const file = path.join(repoDir, 'agents.json');
   updateJson(file, { agents: [] }, (data) => {
     if (!data || !Array.isArray(data.agents)) data = { agents: [] };
     let agent = data.agents.find((a) => a.name === name);
     if (!agent) {
-      agent = { name, role: meta?.role ?? '', created: ts, last_active: ts, status: 'executando' };
+      agent = { name, role: meta?.role ?? '', created: ts, last_active: ts, status: 'running' };
       data.agents.push(agent);
     }
     agent.last_active = ts;
     if (meta?.role) agent.role = meta.role;
-    agent.status = state === 'done' ? 'ocioso' : 'executando';
+    agent.status = state === 'done' ? 'idle' : 'running';
     agent.last_task = taskName;
     return data;
   });
 }
 
-// Qual agente o status descreve. O ciclo de vida é postado pelo piloto SOBRE o
-// executor (`--from piloto --to k8s-operator`), então quem entra no registro é o
-// destinatário; um agente que posta o próprio status entra por ele mesmo.
-// `--meta '{"agent":"..."}'` tem precedência sobre as duas heurísticas.
+// Which agent the status describes. The lifecycle is posted by the pilot ABOUT the
+// executor (`--from pilot --to k8s-operator`), so the one that enters the registry is the
+// recipient; an agent that posts its own status enters by itself.
+// `--meta '{"agent":"..."}'` takes precedence over both heuristics.
 function agenteDoStatus(from, to, meta) {
-  const nome = meta?.agent ?? (from === 'piloto' ? to : from);
-  return nome === 'humano' || nome === 'sala' ? null : nome;
+  const name = meta?.agent ?? (from === 'pilot' || from === 'piloto' ? to : from);
+  return ['human', 'humano', 'room', 'sala'].includes(name) ? null : name;
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -117,45 +139,60 @@ if (cmd === 'post') {
   const { flags, pos } = parseArgs(rest, ['from', 'to', 'kind', 'meta']);
   const [repoSlug, taskArg, body] = pos;
   if (!flags.from || !flags.to || !flags.kind || body === undefined) {
-    die('uso: node tools/bus.mjs post <repo> <task> --from X --to Y --kind K [--meta \'<json>\'] "corpo"');
+    die('usage: node tools/bus.mjs post <repo> <task> --from X --to Y --kind K [--meta \'<json>\'] "body"');
   }
-  if (!KINDS.includes(flags.kind)) die(`kind inválido: "${flags.kind}" — aceitos: ${KINDS.join(', ')}`);
+  if (!KINDS.includes(flags.kind)) die(`invalid kind: "${flags.kind}" — accepted: ${KINDS.join(', ')}`);
   let meta;
   if (flags.meta !== undefined) {
     try {
       meta = JSON.parse(flags.meta);
     } catch (e) {
-      die(`--meta não é JSON válido: ${e.message}`);
+      die(`--meta is not valid JSON: ${e.message}`);
     }
   }
   if (flags.kind === 'status' && meta?.state && !STATES.includes(meta.state)) {
-    die(`meta.state inválido: "${meta.state}" — aceitos: ${STATES.join(', ')}`);
+    die(`invalid meta.state: "${meta.state}" — accepted: ${STATES.join(', ')}`);
+  }
+  if (meta?.answers !== undefined && meta?.dismisses !== undefined) {
+    die('--meta cannot carry both "answers" and "dismisses" — a reply either answers or declines the question, not both');
   }
   const { taskDir, taskName, repoDir } = resolveTask(repoSlug, taskArg);
+  const messagesFile = path.join(taskDir, 'messages.jsonl');
+  // "answers"/"dismisses" must point at a message that already exists — a
+  // dangling reference is exactly the defect the link exists to prevent, and
+  // it's caught here, at the write, not discovered later reading the panel.
+  const ref = meta?.answers ?? meta?.dismisses;
+  if (ref !== undefined) {
+    const existing = readMessages(messagesFile);
+    if (refIndex(existing, ref) === -1) {
+      die(`${meta.answers !== undefined ? '"answers"' : '"dismisses"'} references a message that doesn't exist: "${ref}" — check the id with: node tools/bus.mjs read ${repoSlug} ${taskName}`);
+    }
+  }
   const ts = new Date().toISOString();
-  const msg = { ts, from: flags.from, to: flags.to, kind: flags.kind, body };
+  const id = newId(ts);
+  const msg = { id, ts, from: flags.from, to: flags.to, kind: flags.kind, body };
   if (meta !== undefined) msg.meta = meta;
-  appendJsonl(path.join(taskDir, 'messages.jsonl'), [msg]);
+  appendJsonl(messagesFile, [msg]);
   if (flags.kind === 'status' && meta?.state) {
     const alvo = agenteDoStatus(flags.from, flags.to, meta);
     if (alvo) upsertAgent(repoDir, taskName, alvo, meta.state, ts, meta);
   }
   touchMeta(taskDir);
-  console.log(`mensagem registrada: ${flags.from}→${flags.to} [${flags.kind}] em repos/${repoSlug}/tasks/${taskName}/messages.jsonl`);
+  console.log(`message recorded [${id}]: ${flags.from}→${flags.to} [${flags.kind}] in repos/${repoSlug}/tasks/${taskName}/messages.jsonl`);
 } else if (cmd === 'log') {
   const { flags, pos } = parseArgs(rest, ['level', 'source']);
   const [repoSlug, taskArg, body] = pos;
   if (!flags.level || !flags.source || body === undefined) {
-    die('uso: node tools/bus.mjs log <repo> <task> --level L --source S "corpo" (corpo "-" lê stdin)');
+    die('usage: node tools/bus.mjs log <repo> <task> --level L --source S "body" (body "-" reads stdin)');
   }
-  if (!LEVELS.includes(flags.level)) die(`level inválido: "${flags.level}" — aceitos: ${LEVELS.join(', ')}`);
+  if (!LEVELS.includes(flags.level)) die(`invalid level: "${flags.level}" — accepted: ${LEVELS.join(', ')}`);
   const { taskDir, taskName } = resolveTask(repoSlug, taskArg);
   const ts = new Date().toISOString();
   let linhas;
   if (body === '-') {
     const stdin = fs.readFileSync(0, 'utf8');
     linhas = stdin.split('\n').filter((l, i, arr) => l !== '' || i < arr.length - 1);
-    if (!linhas.length) die('stdin vazio — nada para registrar');
+    if (!linhas.length) die('stdin empty — nothing to record');
   } else {
     linhas = [body];
   }
@@ -164,53 +201,44 @@ if (cmd === 'post') {
     linhas.map((l) => ({ ts, level: flags.level, source: flags.source, body: l }))
   );
   touchMeta(taskDir);
-  console.log(`${linhas.length} registro(s) [${flags.level}] de ${flags.source} em repos/${repoSlug}/tasks/${taskName}/logs.jsonl`);
+  console.log(`${linhas.length} record(s) [${flags.level}] from ${flags.source} in repos/${repoSlug}/tasks/${taskName}/logs.jsonl`);
 } else if (cmd === 'read') {
   const { flags, pos } = parseArgs(rest, ['kind', 'to', 'since', 'tail']);
   const [repoSlug, taskArg] = pos;
   const { taskDir, taskName } = resolveTask(repoSlug, taskArg);
-  if (flags.kind && !KINDS.includes(flags.kind)) die(`kind inválido: "${flags.kind}" — aceitos: ${KINDS.join(', ')}`);
+  if (flags.kind && !KINDS.includes(flags.kind)) die(`invalid kind: "${flags.kind}" — accepted: ${KINDS.join(', ')}`);
   const file = path.join(taskDir, 'messages.jsonl');
   if (!fs.existsSync(file)) {
-    console.log(`(sem mensagens em repos/${repoSlug}/tasks/${taskName})`);
+    console.log(`(no messages in repos/${repoSlug}/tasks/${taskName})`);
     process.exit(0);
   }
-  let msgs = fs
-    .readFileSync(file, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .map((l, i) => {
-      try {
-        return JSON.parse(l);
-      } catch {
-        die(`linha ${i + 1} de messages.jsonl não é JSON válido`);
-      }
-    });
+  let msgs = readMessages(file);
   if (flags.kind) msgs = msgs.filter((m) => m.kind === flags.kind);
   if (flags.to) msgs = msgs.filter((m) => m.to === flags.to);
   if (flags.since) {
     const since = Date.parse(flags.since);
-    if (Number.isNaN(since)) die(`--since não é data ISO válida: "${flags.since}"`);
+    if (Number.isNaN(since)) die(`--since is not a valid ISO date: "${flags.since}"`);
     msgs = msgs.filter((m) => Date.parse(m.ts) >= since);
   }
   if (flags.tail) {
     const n = parseInt(flags.tail, 10);
-    if (!Number.isInteger(n) || n <= 0) die(`--tail exige inteiro positivo: "${flags.tail}"`);
+    if (!Number.isInteger(n) || n <= 0) die(`--tail requires a positive integer: "${flags.tail}"`);
     msgs = msgs.slice(-n);
   }
   if (!msgs.length) {
-    console.log('(nenhuma mensagem com esses filtros)');
+    console.log('(no messages match these filters)');
     process.exit(0);
   }
   for (const m of msgs) {
     const hora = (m.ts ?? '').slice(11, 19) || m.ts;
     const corpo = String(m.body ?? '').split('\n').join('\n           ');
     const extra = m.meta ? `  ${JSON.stringify(m.meta)}` : '';
-    console.log(`${hora}  ${m.from}→${m.to}  [${m.kind}]  ${corpo}${extra}`);
+    const id = m.id ? `  [${m.id}]` : '';
+    console.log(`${hora}  ${m.from}→${m.to}  [${m.kind}]  ${corpo}${extra}${id}`);
   }
 } else if (cmd === 'agents') {
-  // agents <repo> [<task>] — lê repos/<repo>/agents.json; <task> (opcional, nome
-  // completo ou prefixo) só filtra a exibição pelos agentes cuja last_task é essa task.
+  // agents <repo> [<task>] — reads repos/<repo>/agents.json; <task> (optional, full
+  // name or prefix) only filters the display to agents whose last_task is that task.
   const { pos } = parseArgs(rest, []);
   const [repoSlug, taskArg] = pos;
   let repoDir;
@@ -224,14 +252,14 @@ if (cmd === 'post') {
   const agents = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')).agents ?? [] : [];
   const listados = filterTask ? agents.filter((a) => a.last_task === filterTask) : agents;
   if (!listados.length) {
-    console.log(`(nenhum agente registrado em repos/${repoSlug}${filterTask ? ` com last_task ${filterTask}` : ''})`);
+    console.log(`(no agent registered in repos/${repoSlug}${filterTask ? ` with last_task ${filterTask}` : ''})`);
     process.exit(0);
   }
   for (const a of listados) {
     const role = a.role ? ` (${a.role})` : '';
-    const lastTask = a.last_task ? `  última task ${a.last_task}` : '';
-    console.log(`${a.name}${role} — ${a.status}  criado ${a.created}  ativo ${a.last_active}${lastTask}`);
+    const lastTask = a.last_task ? `  last task ${a.last_task}` : '';
+    console.log(`${a.name}${role} — ${a.status}  created ${a.created}  active ${a.last_active}${lastTask}`);
   }
 } else {
-  die('uso: node tools/bus.mjs <post|log|read> <repo> <task> [...] | agents <repo> [<task>]');
+  die('usage: node tools/bus.mjs <post|log|read> <repo> <task> [...] | agents <repo> [<task>]');
 }

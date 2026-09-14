@@ -14,6 +14,8 @@ Format of each item:
 - **How to apply**: the practical trigger for next time.
 ```
 
+Writes to this file always go through `tools/learnings.mjs` (`append`, `promote`, `note`) — never a direct edit. Several agents may be appending from different tasks in the same window; the tool locks, dedupes by title, and requires the four fields above on every new item.
+
 ---
 
 _(no items yet — the file grows with each retrospective)_
