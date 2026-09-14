@@ -132,6 +132,11 @@ const STRUCT_REGRAS = {
     requer: 'A task marked "concluida" has a dag.json with at least one node, every node concluida, no guardrail pendente/falha across any node, and no question/decision to the human left unanswered.',
     devolve: 'One "fail" per violated condition, naming the offending node(s)/guardrail(s)/message(s).',
   },
+  vacuo: {
+    tipo: 'structural',
+    requer: 'The resolved root (WFA_ROOT, or this installation) actually has a repos/ directory with at least one repo in it — this only applies when no <repo> was named on the command line.',
+    devolve: '"not checked", naming the exact root path it ran against, when there is no repo at all. Never printed as passing/consistent: an empty root and a root that fully passed must never look the same in the output. A <repo> named explicitly that does not exist stays a plain usage error (exit 1), not this.',
+  },
 };
 
 const REGRAS = {
@@ -477,7 +482,10 @@ function runHook() {
   }
 
   if (!fs.existsSync(REPOS_DIR) || !listRepos().length) {
-    release(`check.mjs --hook: no repo in this workspace (${ROOT}) — nothing to check.`);
+    // Same declared vacuum as the plain command, not a silent pass: a worktree
+    // whose WFA_ROOT wasn't pointed back at the main tree looks exactly like
+    // this, and staying quiet here is how that mistake goes unnoticed.
+    release(`check.mjs --hook: not checked — no repo in this root (${ROOT}).`);
     return;
   }
 
@@ -541,11 +549,9 @@ function main() {
 
   const [repoArg, taskArg] = pos;
   const { repos, vacuumOk } = resolveTargetRepos(repoArg);
-  if (!repos.length) {
-    if (vacuumOk) {
-      console.log(`(no repo in this workspace — ${ROOT})`);
-      process.exit(0);
-    }
+  if (!repos.length && vacuumOk) {
+    printFindings([finding('vacuo', 'not-checked', { msg: `no repo in this root (${ROOT})` })]);
+    process.exit(0);
   }
 
   let resolvedTask = null;

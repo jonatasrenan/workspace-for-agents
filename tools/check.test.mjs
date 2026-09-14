@@ -178,10 +178,63 @@ test('non-tautology: a repo with no task at all is "not checked", never silently
   fs.rmSync(T, { recursive: true, force: true });
 });
 
+test('vacuum: a root with no repos/ directory at all is declared, with its path, never silently passing', () => {
+  const T = fs.mkdtempSync(path.join(os.tmpdir(), 'wfa-check-'));
+  const env = { WFA_ROOT: T };
+
+  const structural = run(CHECK, [], { env });
+  assert.equal(structural.status, 0);
+  assert.match(structural.stdout, /\[not-checked\] \(vacuo\) no repo in this root/);
+  assert.match(structural.stdout, new RegExp(T.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+
+  const lint = run(CHECK, ['--lint'], { env });
+  assert.equal(lint.status, 0);
+  assert.match(lint.stdout, /\[not-checked\] \(vacuo\)/);
+
+  fs.rmSync(T, { recursive: true, force: true });
+});
+
+test('vacuum: a root with an EMPTY repos/ directory is also declared (not just a missing directory)', () => {
+  const T = fs.mkdtempSync(path.join(os.tmpdir(), 'wfa-check-'));
+  fs.mkdirSync(path.join(T, 'repos'), { recursive: true });
+  const env = { WFA_ROOT: T };
+
+  const res = run(CHECK, [], { env });
+  assert.equal(res.status, 0);
+  assert.match(res.stdout, /\[not-checked\] \(vacuo\) no repo in this root/);
+
+  fs.rmSync(T, { recursive: true, force: true });
+});
+
+test('vacuum: a repo named explicitly that does not exist stays a plain usage error, not a declared vacuum', () => {
+  const T = fs.mkdtempSync(path.join(os.tmpdir(), 'wfa-check-'));
+  fs.mkdirSync(path.join(T, 'repos'), { recursive: true });
+  const env = { WFA_ROOT: T };
+
+  const res = run(CHECK, ['does-not-exist'], { env });
+  assert.equal(res.status, 1);
+  assert.match(res.stderr, /repo not found/);
+  assert.doesNotMatch(res.stdout, /vacuo/);
+
+  fs.rmSync(T, { recursive: true, force: true });
+});
+
+test('vacuum: --hook releases with a warning in stdout and exit 0, never blocking on an empty root', () => {
+  const T = fs.mkdtempSync(path.join(os.tmpdir(), 'wfa-check-'));
+  const env = { WFA_ROOT: T };
+
+  const res = run(CHECK, ['--hook'], { env, input: JSON.stringify({ session_id: 'x', hook_event_name: 'Stop', stop_hook_active: false }) });
+  assert.equal(res.status, 0);
+  assert.match(res.stdout, /not checked — no repo in this root/);
+  assert.equal(res.stderr, '');
+
+  fs.rmSync(T, { recursive: true, force: true });
+});
+
 test('--regras documents every id used above, and refuses an unregistered id (internal consistency)', () => {
   const res = run(CHECK, ['--regras'], {});
   assert.equal(res.status, 0);
-  for (const id of ['meta', 'gate', 'jargao', 'stub', 'dag', 'aceito', 'rastro', 'aguardando']) {
+  for (const id of ['meta', 'gate', 'vacuo', 'jargao', 'stub', 'dag', 'aceito', 'rastro', 'aguardando']) {
     assert.match(res.stdout, new RegExp(`\\n${id}\\n`));
   }
 });

@@ -10,6 +10,7 @@ The harness is [Claude Code](https://claude.com/claude-code): `CLAUDE.md` instru
 
 - **You talk in natural language.** "New project about X", "let's work on task 02", "close this task". The pilot maps the intent to commands and drives.
 - **The pilot never does manual grunt work.** Operating the cluster, reading logs and metrics, running tests and reviewing all go to the subagents in `.claude/agents/`; independent fronts go out in parallel.
+- **Several agents can work the same task at once.** A node that only produces trail (a document, an analysis) runs alongside the others in the same tree; a node that touches code gets its own `git worktree` per branch, with the state root pointed back at the main tree — see the full rule in `CLAUDE.md`.
 - **Every delegation leaves a trace.** Each agent cycle is posted to the task's bus (`spawned` → `working` → `done`) and the token cost is recorded — the panel shows the collaboration in real time.
 - **State is push.** Whoever performs an operation records the result; the viewer renders what's saved in `repos/<repo>/`. On its own it only does two things: pings the URLs already registered in Access (to show whether they're up) and reads `workspace/<repo>/`'s git history to build the Diff tab.
 - **Code stays separate.** Each project's code lives in `workspace/<repo>/`, its own clean git repository, outside this harness's version control.
