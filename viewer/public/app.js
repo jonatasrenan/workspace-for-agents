@@ -162,11 +162,11 @@ function fileH1(file) {
   return (file.content.match(/^#\s+(.+)$/m) || [])[1]?.trim() || '';
 }
 
-// short tab label: H1 cut at the first "—" ("Plano", "Journal"...);
-// 00-enunciado.md (H1 = task title) becomes "Statement"; outside that pattern,
+// short tab label: H1 cut at the first "—" ("Plan", "Journal"...);
+// 00-brief.md (H1 = task title) becomes "Brief"; outside that pattern,
 // first segment truncated to ~24 chars at a word boundary. The full H1 stays in the content.
 function tabLabel(file) {
-  if (file.name === '00-enunciado.md') return 'Statement';
+  if (file.name === '00-brief.md') return 'Brief';
   const h1 = fileH1(file);
   if (!h1) return file.name.replace(/^\d+-/, '').replace(/\.md$/, '');
   return truncWord(h1.split('—')[0].trim() || h1);
@@ -1402,7 +1402,7 @@ function renderRepoOverview(repo) {
   parts.push(renderRoster(repo)); // full roster of the repo's agents (cards → sheet)
 
   if (repo.context) parts.push(`<hr class="sep" />${marked.parse(repo.context)}`);
-  else parts.push('<p class="muted">No 00-contexto.md yet.</p>');
+  else parts.push('<p class="muted">No 00-context.md yet.</p>');
 
   return `<div class="md wide">${parts.join('')}</div>`;
 }

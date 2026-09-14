@@ -10,12 +10,12 @@ description: Adversarial review of a stage of the active task — dispatches the
 ## Flow
 
 1. **Identify the target stage** of the active task (with no active task in the conversation, resolve that first). Three possible targets — choose by the moment, with an explicit default:
-   - **plan** (`10-plano.md`) — right after planning, before executing;
+   - **plan** (`10-plan.md`) — right after planning, before executing;
    - **code** (`workspace/<repo>/`) — after implementing, before deploying;
    - **deploy** (manifests + real state on minikube) — after the rollout, before declaring it delivered.
    If the user didn't specify, propose the most recently completed stage as the default.
 2. **The review is per DAG node**: locate the node(s) that cover the target stage (`node tools/dag.mjs show <repo> <task>`) and their attached guardrails — the `verificacao` of each guardrail in the pool is the attack's script.
-3. **Dispatch the `adversarial-reviewer` agent** with a precise briefing: what the target is, where it lives (absolute paths), the acceptance criteria from the `00-enunciado.md` (paste them into the prompt — the agent attacks against them), the guardrails of the node(s) with the verifications pasted in (id + `verificacao`), and any suspicion of yours ("I'm suspicious of the probe", "the test for X seems weak to me"). One target per dispatch — reviewing everything at once dilutes the attack.
+3. **Dispatch the `adversarial-reviewer` agent** with a precise briefing: what the target is, where it lives (absolute paths), the acceptance criteria from the `00-brief.md` (paste them into the prompt — the agent attacks against them), the guardrails of the node(s) with the verifications pasted in (id + `verificacao`), and any suspicion of yours ("I'm suspicious of the probe", "the test for X seems weak to me"). One target per dispatch — reviewing everything at once dilutes the attack.
 4. **Triage — no finding passes without your confirmation**: for each finding in the report, verify the evidence (re-read the excerpt, run the cited command). Classify:
    - **confirmed** → decide with the user: fix now or accept as a risk (under tight target-time, `[LOW]` is almost always an accepted risk — say so);
    - **refuted** → record why (insufficient evidence or the agent's misreading);

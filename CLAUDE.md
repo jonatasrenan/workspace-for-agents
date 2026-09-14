@@ -14,15 +14,15 @@ The user talks in natural language — they **don't** know or need to call tools
 
 | What the user says | What you do |
 |---|---|
-| "new project/repo about X" | `node tools/new-repo.mjs "<Title>"` → fill in `00-contexto.md` |
-| "new task: Y" | `node tools/new-task.mjs <repo> "<Title>"` → fill in `00-enunciado.md`; if the request **already specifies** the task's content, chain it in the same turn: plan + DAG → dispatch agents |
+| "new project/repo about X" | `node tools/new-repo.mjs "<Title>"` → fill in `00-context.md` |
+| "new task: Y" | `node tools/new-task.mjs <repo> "<Title>"` → fill in `00-brief.md`; if the request **already specifies** the task's content, chain it in the same turn: plan + DAG → dispatch agents |
 | "clone X, deploy it, and solve problem Y" (a plural/decomposable request) | repo + **tasks 01 (deploy) and 02 (problem, `--depends-on` 01) created together** — full roadmap visible in the panel before executing any of them — and chained execution, task by task |
-| "let's work on task X" | **execution mode**: plan first (decomposition + what to delegate in `10-plano.md`), then execute by delegating to subagents, `20-journal.md` updated in real time — the human follows along in the Room/Agents/Logs/Costs panels |
+| "let's work on task X" | **execution mode**: plan first (decomposition + what to delegate in `10-plan.md`), then execute by delegating to subagents, `20-journal.md` updated in real time — the human follows along in the Room/Agents/Logs/Costs panels |
 | "close this task" / "task retrospective" | retrospective in `30-review.md` through the 4 lenses, with evidence from the journal |
 
 ## The workspace in operation
 
-- **Every task's decomposition becomes a DAG**: in the same gesture as `10-plano.md`, record the decomposition via `node tools/dag.mjs set <repo> <task>` — 4 to 8 nodes, each with tags and with guardrails attached from the pool (`node tools/dag.mjs pool` lists the catalog; match each guardrail's `aplica_a` with the node's tags). Node status kept live: `node-status` on start (`executando`) and on finish (`concluida`) of each subtask — the gate refuses `concluida` with a pending/failed guardrail — the deliberate escape hatch is `dag.mjs guardrail ... aceito --aceitar "reason"`, with the reason also in the journal (`--force` on `node-status` only skips dependencies, never guardrails).
+- **Every task's decomposition becomes a DAG**: in the same gesture as `10-plan.md`, record the decomposition via `node tools/dag.mjs set <repo> <task>` — 4 to 8 nodes, each with tags and with guardrails attached from the pool (`node tools/dag.mjs pool` lists the catalog; match each guardrail's `aplica_a` with the node's tags). Node status kept live: `node-status` on start (`executando`) and on finish (`concluida`) of each subtask — the gate refuses `concluida` with a pending/failed guardrail — the deliberate escape hatch is `dag.mjs guardrail ... aceito --aceitar "reason"`, with the reason also in the journal (`--force` on `node-status` only skips dependencies, never guardrails).
 - **A plural or decomposable request becomes N tasks created at once**: the full roadmap stays visible in the panel before any of them execute — tasks chained via `new-task.mjs`'s `--depends-on` (`depends_on` field in meta.json). Task vs. DAG-node cutoff: something becomes a **task** when it has its own verifiable deliverable, worth reviewing on its own; it becomes a **node** when it's an intermediate step with no demonstrable value alone. A request that fits in a single deliverable becomes **one** task — don't slice for the sake of slicing.
 - **Chained execution**: once a task closes through the gate (acceptance criteria + review), publish the milestone in the Room ("01 done, starting 02") and chain the next one in the same flow — the milestone gives the human a window to interrupt, but approval is never requested; stop only in the face of a real decision (e.g., the previous task's result changes the plan for the next one → ask, with a recommended default).
 - **The pilot never does manual grunt work**: cluster operations, reading logs/metrics, running tests and reviewing all go to the agents in `.claude/agents/`; independent fronts go out as **parallel** delegations in the same block.
@@ -76,12 +76,12 @@ workspace-for-agents/
 ├── workspace/<repo>/          # clonable code; its OWN git repo, clean — outside the harness's git
 ├── repos/<repo>/              # per-repo harness metadata
 │   ├── meta.json               # {"title","stack":[],"status","created","updated","workspace"}
-│   ├── 00-contexto.md          # repo objective, macro statement
+│   ├── 00-context.md          # repo objective, macro statement
 │   ├── agents.json             # repo's live agents (kept up to date by the bus)
 │   └── tasks/<nn>-<slug>/     # nn = 01, 02...
 │       ├── meta.json          # {"title","status":"todo"|"em-andamento"|"concluida","depends_on":[...],...}
-│       ├── 00-enunciado.md    # problem statement: objective, requirements, acceptance criteria, target time
-│       ├── 10-plano.md        # decomposition + what's delegated to AI vs done by hand
+│       ├── 00-brief.md    # problem statement: objective, requirements, acceptance criteria, target time
+│       ├── 10-plan.md        # decomposition + what's delegated to AI vs done by hand
 │       ├── 20-journal.md      # timestamped execution diary
 │       └── 30-review.md       # retrospective through the 4 lenses
 ├── .claude/agents/            # specialized executors

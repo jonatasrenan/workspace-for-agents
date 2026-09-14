@@ -132,17 +132,17 @@ const STRUCT_REGRAS = {
 const REGRAS = {
   jargao: {
     tipo: 'lint',
-    requer: 'No artifact (00-contexto.md, 00-enunciado.md, 10-plano.md, 20-journal.md, 30-review.md) names the engine\'s internal mechanics by naming a tool file, the viewer/panel, the harness itself, learnings.md, guardrails/pool.json, CLAUDE.md, or a pilot skill/slash command — and none uses interview/evaluation vocabulary (rubric, candidate, interview, evaluator, "how did I do", "what will be observed"). HTML comments in the .md don\'t count — they\'re template instructions, never rendered.',
+    requer: 'No artifact (00-context.md, 00-brief.md, 10-plan.md, 20-journal.md, 30-review.md) names the engine\'s internal mechanics by naming a tool file, the viewer/panel, the harness itself, learnings.md, guardrails/pool.json, CLAUDE.md, or a pilot skill/slash command — and none uses interview/evaluation vocabulary (rubric, candidate, interview, evaluator, "how did I do", "what will be observed"). HTML comments in the .md don\'t count — they\'re template instructions, never rendered.',
     devolve: 'One "fail" per matched term per file, with the term and an approximate line. A repo may allow a specific term by declaring "jargao_permitido": {"<term>": "<reason>"} in its own meta.json.',
   },
   stub: {
     tipo: 'lint',
-    requer: 'A task that is todo, em-andamento or concluida has 00-enunciado.md and 10-plano.md filled in (not identical to the template).',
+    requer: 'A task that is todo, em-andamento or concluida has 00-brief.md and 10-plan.md filled in (not identical to the template).',
     devolve: '"fail" per stub enunciado/plano; "warn" per stub 20-journal.md/30-review.md (these two don\'t block, but are still worth flagging).',
   },
   dag: {
     tipo: 'lint',
-    requer: 'A task whose 10-plano.md is filled in (not a stub) has a dag.json that validates with zero errors from the very validateDag() the `dag.mjs` CLI uses.',
+    requer: 'A task whose 10-plan.md is filled in (not a stub) has a dag.json that validates with zero errors from the very validateDag() the `dag.mjs` CLI uses.',
     devolve: '"fail" with the exact validateDag() error list when missing/invalid; "not checked" when the plan itself is still a stub — there is nothing to validate yet.',
   },
   aceito: {
@@ -265,7 +265,7 @@ const EVAL_VOICE_TERMS = [
 ];
 const JARGAO_TERMS = [...TOOL_FILE_NAMES, ...ENGINE_TERMS, ...SKILL_COMMANDS, ...EVAL_VOICE_TERMS];
 
-const ARTIFACT_FILES = ['00-enunciado.md', '10-plano.md', '20-journal.md', '30-review.md'];
+const ARTIFACT_FILES = ['00-brief.md', '10-plan.md', '20-journal.md', '30-review.md'];
 
 function lintJargaoInFile(repoSlug, taskName, filePath, fileLabel, allowed) {
   const out = [];
@@ -289,7 +289,7 @@ function lintRepo(repoSlug, onlyTask) {
   const repoMeta = readJson(path.join(repoDir, 'meta.json')) || {};
   const allowed = repoMeta.jargao_permitido && typeof repoMeta.jargao_permitido === 'object' ? repoMeta.jargao_permitido : {};
 
-  out.push(...lintJargaoInFile(repoSlug, null, path.join(repoDir, '00-contexto.md'), '00-contexto.md', allowed));
+  out.push(...lintJargaoInFile(repoSlug, null, path.join(repoDir, '00-context.md'), '00-context.md', allowed));
 
   const tasks = onlyTask ? [onlyTask] : listTasks(repoDir);
   if (!tasks.length) {
@@ -317,7 +317,7 @@ function lintTask(repoSlug, repoDir, taskName, allowed) {
   if (status === 'todo') {
     out.push(finding('stub', 'not-checked', { repo: repoSlug, task: taskName, msg: `${ref}: still todo — not checked` }));
   } else {
-    const stubLevel = { '00-enunciado.md': 'fail', '10-plano.md': 'fail', '20-journal.md': 'warn', '30-review.md': 'warn' };
+    const stubLevel = { '00-brief.md': 'fail', '10-plan.md': 'fail', '20-journal.md': 'warn', '30-review.md': 'warn' };
     for (const file of ARTIFACT_FILES) {
       const content = contents[file];
       if (content != null && isStub(file, content)) {
@@ -327,8 +327,8 @@ function lintTask(repoSlug, repoDir, taskName, allowed) {
   }
 
   // dag — only meaningful once the plan is filled in
-  const planoContent = contents['10-plano.md'];
-  const planoIsStub = planoContent == null || isStub('10-plano.md', planoContent);
+  const planoContent = contents['10-plan.md'];
+  const planoIsStub = planoContent == null || isStub('10-plan.md', planoContent);
   if (planoIsStub) {
     out.push(finding('dag', 'not-checked', { repo: repoSlug, task: taskName, msg: `${ref}: plan is still a stub — nothing to validate yet` }));
   } else {

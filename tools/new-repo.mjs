@@ -1,13 +1,13 @@
 // Deterministic repo setup — the LLM never hand-types the skeleton.
 // Usage: node tools/new-repo.mjs "Repo title" [--slug <slug>]
 // Creates in one call:
-//   repos/<slug>/           (meta.json + 00-contexto.md + tasks/)
+//   repos/<slug>/           (meta.json + 00-context.md + tasks/)
 //   workspace/<slug>/       (git init -b main + minimal README.md — CLEAN code repo)
 // Prints to stdout: line 1 is the slug (the agent uses it directly).
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { CONTEXTO_TEMPLATE, slugify } from './templates.mjs';
+import { CONTEXT_TEMPLATE, slugify } from './templates.mjs';
 import { stateRoot } from './root.mjs';
 import { ensureMemoryFiles } from './fs.mjs';
 
@@ -65,8 +65,8 @@ fs.writeFileSync(
     2
   ) + '\n'
 );
-const [contextoFile, contextoContent] = CONTEXTO_TEMPLATE;
-fs.writeFileSync(path.join(repoDir, contextoFile), contextoContent);
+const [contextFile, contextContent] = CONTEXT_TEMPLATE;
+fs.writeFileSync(path.join(repoDir, contextFile), contextContent);
 
 // --- workspace/<slug>/: repo's own code, clean (no harness artifacts) ---
 fs.mkdirSync(wsDir, { recursive: true });
@@ -78,5 +78,5 @@ if (git.status !== 0) {
 fs.writeFileSync(path.join(wsDir, 'README.md'), `# ${title}\n`);
 
 console.log(slug);
-console.log(`created: repos/${slug}/ (meta.json, ${contextoFile}, tasks/) and workspace/${slug}/ (git main, README.md)`);
-console.log('next step: fill in 00-contexto.md and create the first task with new-task.mjs');
+console.log(`created: repos/${slug}/ (meta.json, ${contextFile}, tasks/) and workspace/${slug}/ (git main, README.md)`);
+console.log('next step: fill in 00-context.md and create the first task with new-task.mjs');

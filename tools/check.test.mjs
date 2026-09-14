@@ -131,8 +131,8 @@ test('lint: artifact still identical to the template fails as a stub', () => {
 
   const res = run(CHECK, ['sonda', '01', '--lint'], { env });
   assert.equal(res.status, 1);
-  assert.match(res.stdout, /\[fail\] \(stub\).*00-enunciado\.md: still identical to the template/);
-  assert.match(res.stdout, /\[fail\] \(stub\).*10-plano\.md: still identical to the template/);
+  assert.match(res.stdout, /\[fail\] \(stub\).*00-brief\.md: still identical to the template/);
+  assert.match(res.stdout, /\[fail\] \(stub\).*10-plan\.md: still identical to the template/);
   assert.match(res.stdout, /\[warn\] \(stub\).*20-journal\.md/);
 
   fs.rmSync(T, { recursive: true, force: true });
@@ -142,7 +142,7 @@ test('lint: artifact naming internal engine mechanics fails jargao; jargao_permi
   const { T, env, taskDir } = makeRepoWithTask();
   setStatus(path.join(taskDir, 'meta.json'), 'em-andamento');
   fs.writeFileSync(
-    path.join(taskDir, '00-enunciado.md'),
+    path.join(taskDir, '00-brief.md'),
     '# Statement\n\n## Objective\nSee bus.mjs for details.\n\n## Requirements\nnone\n\n## Acceptance criteria\n- it works\n\n## Target time\n30 min\n'
   );
 

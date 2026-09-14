@@ -1,9 +1,9 @@
 // Repo/task artifact templates — module shared between new-repo.mjs,
 // new-task.mjs and the viewer (stub detection: orange tab while the template hasn't been touched).
 
-// Repo's 00-contexto.md (lives in repos/<slug>/, outside the workspace)
-export const CONTEXTO_TEMPLATE = [
-  '00-contexto.md',
+// Repo's 00-context.md (lives in repos/<slug>/, outside the workspace)
+export const CONTEXT_TEMPLATE = [
+  '00-context.md',
   `# Context
 
 ## Repo objective
@@ -22,9 +22,9 @@ _(what deliberately does NOT go in)_
 
 // A task's stages: [file, content]
 export const TASK_TEMPLATES = {
-  enunciado: [
-    '00-enunciado.md',
-    `# Statement
+  brief: [
+    '00-brief.md',
+    `# Brief
 
 ## Objective
 _(not yet defined)_
@@ -39,8 +39,8 @@ _(what needs to be running/demonstrable at the end)_
 _(not yet defined)_
 `,
   ],
-  plano: [
-    '10-plano.md',
+  plan: [
+    '10-plan.md',
     `# Plan
 
 ## Decomposition
@@ -105,6 +105,6 @@ export const slugify = (s, max = 42) => {
 
 // filename -> content (to detect a stub by exact comparison)
 export const TEMPLATE_BY_FILE = Object.fromEntries([
-  CONTEXTO_TEMPLATE,
+  CONTEXT_TEMPLATE,
   ...Object.values(TASK_TEMPLATES),
 ]);

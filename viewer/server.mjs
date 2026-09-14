@@ -158,18 +158,20 @@ function eventBounds(streams) {
   return { first, last };
 }
 
-// Target time in minutes: meta.tempo_alvo_min takes precedence; otherwise, starting
-// from the "Tempo-alvo" marker in 00-enunciado.md (heading "## Tempo-alvo" with the
-// value on the next line, or inline "**Tempo-alvo: 20 minutos.**") takes the FIRST
+// Target time in minutes: meta.target_time_min takes precedence; otherwise, starting
+// from the "Target time" marker in 00-brief.md (heading "## Target time" with the
+// value on the next line, or inline "**Target time: 20 minutes.**") takes the FIRST
 // number followed by "min". The scan stops at the next heading — numbers from
 // milestones living in another section don't contaminate the target.
+// The Portuguese marker ("Tempo-alvo") is still recognized: artifacts written
+// before the rename keep their target time in the panel.
 function readTargetMin(dir, meta) {
-  const fromMeta = Number(meta?.tempo_alvo_min);
+  const fromMeta = Number(meta?.target_time_min ?? meta?.tempo_alvo_min);
   if (Number.isFinite(fromMeta) && fromMeta > 0) return fromMeta;
-  const raw = readIfExists(path.join(dir, '00-enunciado.md'));
+  const raw = readIfExists(path.join(dir, '00-brief.md'));
   if (raw == null) return null;
   const lines = raw.split('\n');
-  const i = lines.findIndex((l) => /tempo[\s-]*alvo/i.test(l));
+  const i = lines.findIndex((l) => /target[\s-]*time|tempo[\s-]*alvo/i.test(l));
   if (i < 0) return null;
   for (let j = i; j < Math.min(lines.length, i + 12); j++) {
     if (j > i && /^#{1,6}\s/.test(lines[j])) break;
@@ -641,7 +643,7 @@ function readRepos() {
         updated: meta.updated,
         workspace: meta.workspace || `workspace/${d.name}`,
         git: gitInfo(wsDir),
-        context: readIfExists(path.join(dir, '00-contexto.md')),
+        context: readIfExists(path.join(dir, '00-context.md')),
         agents,
         estado,
         acessos,
