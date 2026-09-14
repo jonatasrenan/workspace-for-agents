@@ -6,6 +6,12 @@
 //   node tools/bus.mjs agents <repo> [<task>]   (<task> optional: filters the display by last_task)
 // <task> accepts the full directory name OR just the numeric prefix ("01").
 // Writes to repos/<repo>/tasks/<task>/: messages.jsonl, logs.jsonl (on-demand).
+// Every message is born with a stable "id" (printed on `post` and on `read`).
+// A reply to a question|decision addressed to humano closes it by pointing
+// AT that id — --meta '{"responde":"<id>"}' (answered) or
+// '{"dispensa":"<id>"}' (declined) — never by just being the next message; see
+// tools/perguntas.mjs for the rule. A reference that doesn't resolve to an
+// existing message is refused (exit 1), nothing is written.
 // The agent registry lives at the REPO level: repos/<repo>/agents.json — each agent
 // carries "last_task" = the task of the status post that last updated it.
 // kind=status with meta.state (spawned|working|done) upserts that file (keyed by name=from).
@@ -15,6 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJson, updateJson } from './jsonfile.mjs';
 import { stateRoot } from './root.mjs';
+import { novoId, indiceDaReferencia } from './perguntas.mjs';
 
 const ROOT = stateRoot();
 const KINDS = ['report', 'question', 'decision', 'approval', 'status'];
@@ -71,6 +78,21 @@ function resolveTask(repoSlug, taskArg) {
 
 function appendJsonl(file, objs) {
   fs.appendFileSync(file, objs.map((o) => JSON.stringify(o) + '\n').join(''));
+}
+
+function readMessages(file) {
+  if (!fs.existsSync(file)) return [];
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((l, i) => {
+      try {
+        return JSON.parse(l);
+      } catch {
+        die(`line ${i + 1} of messages.jsonl is not valid JSON`);
+      }
+    });
 }
 
 function touchMeta(taskDir) {
@@ -131,17 +153,32 @@ if (cmd === 'post') {
   if (flags.kind === 'status' && meta?.state && !STATES.includes(meta.state)) {
     die(`invalid meta.state: "${meta.state}" — accepted: ${STATES.join(', ')}`);
   }
+  if (meta?.responde !== undefined && meta?.dispensa !== undefined) {
+    die('--meta cannot carry both "responde" and "dispensa" — a reply either answers or declines the question, not both');
+  }
   const { taskDir, taskName, repoDir } = resolveTask(repoSlug, taskArg);
+  const messagesFile = path.join(taskDir, 'messages.jsonl');
+  // "responde"/"dispensa" must point at a message that already exists — a
+  // dangling reference is exactly the defect the link exists to prevent, and
+  // it's caught here, at the write, not discovered later reading the panel.
+  const ref = meta?.responde ?? meta?.dispensa;
+  if (ref !== undefined) {
+    const existing = readMessages(messagesFile);
+    if (indiceDaReferencia(existing, ref) === -1) {
+      die(`${meta.responde !== undefined ? '"responde"' : '"dispensa"'} references a message that doesn't exist: "${ref}" — check the id with: node tools/bus.mjs read ${repoSlug} ${taskName}`);
+    }
+  }
   const ts = new Date().toISOString();
-  const msg = { ts, from: flags.from, to: flags.to, kind: flags.kind, body };
+  const id = novoId(ts);
+  const msg = { id, ts, from: flags.from, to: flags.to, kind: flags.kind, body };
   if (meta !== undefined) msg.meta = meta;
-  appendJsonl(path.join(taskDir, 'messages.jsonl'), [msg]);
+  appendJsonl(messagesFile, [msg]);
   if (flags.kind === 'status' && meta?.state) {
     const alvo = agenteDoStatus(flags.from, flags.to, meta);
     if (alvo) upsertAgent(repoDir, taskName, alvo, meta.state, ts, meta);
   }
   touchMeta(taskDir);
-  console.log(`message recorded: ${flags.from}→${flags.to} [${flags.kind}] in repos/${repoSlug}/tasks/${taskName}/messages.jsonl`);
+  console.log(`message recorded [${id}]: ${flags.from}→${flags.to} [${flags.kind}] in repos/${repoSlug}/tasks/${taskName}/messages.jsonl`);
 } else if (cmd === 'log') {
   const { flags, pos } = parseArgs(rest, ['level', 'source']);
   const [repoSlug, taskArg, body] = pos;
@@ -175,17 +212,7 @@ if (cmd === 'post') {
     console.log(`(no messages in repos/${repoSlug}/tasks/${taskName})`);
     process.exit(0);
   }
-  let msgs = fs
-    .readFileSync(file, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .map((l, i) => {
-      try {
-        return JSON.parse(l);
-      } catch {
-        die(`line ${i + 1} of messages.jsonl is not valid JSON`);
-      }
-    });
+  let msgs = readMessages(file);
   if (flags.kind) msgs = msgs.filter((m) => m.kind === flags.kind);
   if (flags.to) msgs = msgs.filter((m) => m.to === flags.to);
   if (flags.since) {
@@ -206,7 +233,8 @@ if (cmd === 'post') {
     const hora = (m.ts ?? '').slice(11, 19) || m.ts;
     const corpo = String(m.body ?? '').split('\n').join('\n           ');
     const extra = m.meta ? `  ${JSON.stringify(m.meta)}` : '';
-    console.log(`${hora}  ${m.from}→${m.to}  [${m.kind}]  ${corpo}${extra}`);
+    const id = m.id ? `  [${m.id}]` : '';
+    console.log(`${hora}  ${m.from}→${m.to}  [${m.kind}]  ${corpo}${extra}${id}`);
   }
 } else if (cmd === 'agents') {
   // agents <repo> [<task>] — reads repos/<repo>/agents.json; <task> (optional, full

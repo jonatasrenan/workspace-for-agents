@@ -12,6 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { TEMPLATE_BY_FILE } from '../tools/templates.mjs';
+import { estadoDasPerguntas, perguntasAbertas, indiceDaReferencia, novoId } from '../tools/perguntas.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -104,14 +105,17 @@ function isStub(name, content) {
   return true;
 }
 
-// question|decision kind messages addressed to the human still unanswered:
-// simple heuristic — no LATER message with from="humano" in the task.
-function awaitingMessages(messages) {
-  let lastHuman = -1;
-  messages.forEach((m, i) => {
-    if (m.from === 'humano') lastHuman = i;
+// question|decision messages addressed to the human, annotated with their
+// linked state (tools/perguntas.mjs — not a positional guess): each message
+// gets a `.pergunta` property when it's a question at all.
+function annotateQuestions(messages) {
+  const estados = estadoDasPerguntas(messages);
+  return messages.map((m, i) => {
+    const e = estados[i];
+    if (!e) return m;
+    const closer = e.fechadaPorIndex != null ? messages[e.fechadaPorIndex] : null;
+    return { ...m, pergunta: { estado: e.estado, fechadaPor: closer ? { from: closer.from, body: closer.body, ts: closer.ts } : null } };
   });
-  return messages.filter((m, i) => i > lastHuman && m.to === 'humano' && (m.kind === 'question' || m.kind === 'decision'));
 }
 
 // Accepted risks of the task (light parse of 30-review.md, best effort): bullets
@@ -504,7 +508,8 @@ function readTasks(repoDir, prices, wsDir) {
           : null;
       const tokens = sumTokens(costs);
       const usd = estimateUsd(costs, prices);
-      const awaitingMsgs = awaitingMessages(messages).map((m) => ({ from: m.from, kind: m.kind, body: m.body }));
+      const awaitingMsgs = perguntasAbertas(messages).map((m) => ({ id: m.id, from: m.from, kind: m.kind, body: m.body }));
+      const messagesComPerguntas = annotateQuestions(messages);
       // task timing: real event window + target time from the statement. running =
       // task not yet completed with at least one event (the panel counts the elapsed time).
       const status = meta.status || 'todo';
@@ -521,7 +526,7 @@ function readTasks(repoDir, prices, wsDir) {
         status,
         meta,
         files,
-        messages,
+        messages: messagesComPerguntas,
         logs,
         costs,
         agents,
@@ -691,10 +696,20 @@ function handleBus(req, res) {
     if (typeof body !== 'string' || !body.trim()) return json(res, 400, { error: 'body is required' });
     const dir = path.join(REPOS_DIR, repo, 'tasks', task);
     if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return json(res, 400, { error: 'task does not exist' });
-    const msg = { ts: new Date().toISOString(), from: 'humano', to, kind, body };
+    const messagesFile = path.join(dir, 'messages.jsonl');
+    const existing = readJsonl(messagesFile);
+    if (b.meta?.responde !== undefined && b.meta?.dispensa !== undefined) {
+      return json(res, 400, { error: 'meta cannot carry both "responde" and "dispensa"' });
+    }
+    const ref = b.meta?.responde ?? b.meta?.dispensa;
+    if (ref !== undefined && indiceDaReferencia(existing, ref) === -1) {
+      return json(res, 400, { error: `"${b.meta.responde !== undefined ? 'responde' : 'dispensa'}" references a message that does not exist: "${ref}"` });
+    }
+    const ts = new Date().toISOString();
+    const msg = { id: novoId(ts), ts, from: 'humano', to, kind, body };
     if (b.meta && typeof b.meta === 'object') msg.meta = b.meta;
     try {
-      fs.appendFileSync(path.join(dir, 'messages.jsonl'), JSON.stringify(msg) + '\n');
+      fs.appendFileSync(messagesFile, JSON.stringify(msg) + '\n');
     } catch (e) {
       return json(res, 500, { error: e.message });
     }

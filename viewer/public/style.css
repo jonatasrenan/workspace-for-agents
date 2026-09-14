@@ -488,7 +488,30 @@ button.tab.panel-tab.waiting.active { background: color-mix(in srgb, var(--wait)
   cursor: pointer;
 }
 .reply button:disabled { opacity: 0.5; cursor: default; }
+.reply-dismiss { background: transparent; color: var(--muted); border: 1px solid var(--border); }
 .reply-err { color: #ef4444; font-size: 12px; }
+/* question state — closes by an explicit link (tools/perguntas.mjs), not by
+   message order, so the badge always names the real state, never a guess. */
+.perg-badge {
+  display: inline-block;
+  margin-top: 6px;
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: 10.5px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+}
+.perg-badge.perg-aberta { color: var(--warn); border-color: var(--warn); }
+.perg-badge.perg-respondida { color: var(--ok); border-color: var(--ok); }
+.perg-badge.perg-dispensada { color: var(--muted); border-color: var(--muted); }
+.perg-closed-by {
+  margin-top: 4px;
+  padding: 4px 10px;
+  border-left: 2px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+}
+.perg-closed-by .msg-ts { margin-right: 6px; }
 /* shared page (read-only): the pending item becomes a record, with no reply box */
 .reply-static {
   margin-top: 8px;

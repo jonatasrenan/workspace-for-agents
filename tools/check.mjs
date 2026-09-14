@@ -23,6 +23,7 @@ import path from 'node:path';
 import { stateRoot } from './root.mjs';
 import { validateDag, loadPool } from './dag.mjs';
 import { TEMPLATE_BY_FILE } from './templates.mjs';
+import { perguntasAbertas } from './perguntas.mjs';
 
 const ROOT = stateRoot();
 const REPOS_DIR = path.join(ROOT, 'repos');
@@ -65,17 +66,6 @@ function listRepos() {
 function listTasks(repoDir) {
   const dir = path.join(repoDir, 'tasks');
   return fs.existsSync(dir) ? fs.readdirSync(dir).filter((d) => /^\d{2}-/.test(d)).sort() : [];
-}
-
-// Same heuristic the viewer uses (duplicated on purpose for now — issue #13
-// moves both to one module): a question/decision addressed to the human,
-// with no LATER message from="humano" in the task, is still open.
-function awaitingMessages(messages) {
-  let lastHuman = -1;
-  messages.forEach((m, i) => {
-    if (m.from === 'humano') lastHuman = i;
-  });
-  return messages.filter((m, i) => i > lastHuman && m.to === 'humano' && (m.kind === 'question' || m.kind === 'decision'));
 }
 
 // Same stub heuristic the viewer uses for the orange-tab check.
@@ -129,7 +119,7 @@ const STRUCT_REGRAS = {
   },
   gate: {
     tipo: 'structural',
-    requer: 'A task marked "concluida" has a dag.json with at least one node, every node concluida, no guardrail pendente/falha across any node, and no question/decision to the human left unanswered.',
+    requer: 'A task marked "concluida" has a dag.json with at least one node, every node concluida, no guardrail pendente/falha across any node, and no question/decision to the human left "aberta" (open) by tools/perguntas.mjs\'s link rule.',
     devolve: 'One "fail" per violated condition, naming the offending node(s)/guardrail(s)/message(s).',
   },
   vacuo: {
@@ -167,7 +157,7 @@ const REGRAS = {
   },
   aguardando: {
     tipo: 'lint',
-    requer: 'A task marked "concluida" has no question/decision addressed to the human left unanswered (same heuristic as the "gate" structural check).',
+    requer: 'A task marked "concluida" has no question/decision "aberta" per tools/perguntas.mjs (same rule as the "gate" structural check — a question closes by an explicit link, not by being followed by any later message).',
     devolve: '"fail" with the count and a one-line excerpt of each; "not checked" for a task not yet concluida.',
   },
 };
@@ -242,7 +232,7 @@ function structuralTask(repoSlug, repoDir, taskName) {
   }
 
   const messages = readJsonl(path.join(taskDir, 'messages.jsonl'));
-  const pending = awaitingMessages(messages);
+  const pending = perguntasAbertas(messages);
   if (pending.length) {
     out.push(finding('gate', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: marked concluida with ${pending.length} unanswered question(s)/decision(s) to the human` }));
   }
@@ -379,7 +369,7 @@ function lintTask(repoSlug, repoDir, taskName, allowed) {
     if (missing.length) out.push(finding('rastro', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: concluida with no ${missing.join(' and ')} recorded` }));
 
     const messages = readJsonl(path.join(taskDir, 'messages.jsonl'));
-    const pending = awaitingMessages(messages);
+    const pending = perguntasAbertas(messages);
     if (pending.length) {
       out.push(finding('aguardando', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: ${pending.length} unanswered question(s) to the human — ${pending.map((m) => `"${String(m.body).slice(0, 60)}"`).join('; ')}` }));
     }

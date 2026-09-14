@@ -13,6 +13,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CHECK = path.join(HERE, 'check.mjs');
 const DAG = path.join(HERE, 'dag.mjs');
 const NEW_REPO = path.join(HERE, 'new-repo.mjs');
+const BUS = path.join(HERE, 'bus.mjs');
 const NEW_TASK = path.join(HERE, 'new-task.mjs');
 
 function run(file, args, opts = {}) {
@@ -61,6 +62,31 @@ test('structural: concluida task with an open DAG node blocks (fail, exit 1)', (
 
   fs.rmSync(T, { recursive: true, force: true });
   void taskName;
+});
+
+test('gate/aguardando: an unanswered question blocks a concluida task; an explicit link (not just a later message) clears it', () => {
+  const { T, env, taskDir } = makeRepoWithTask();
+  const dagSet = run(DAG, ['set', 'sonda', '01'], { env, input: JSON.stringify({ nodes: [{ id: 'n1', titulo: 'x', status: 'concluida', tags: [] }] }) });
+  assert.equal(dagSet.status, 0, dagSet.stderr);
+
+  const post = run(BUS, ['post', 'sonda', '01', '--from', 'piloto', '--to', 'humano', '--kind', 'question', 'deploy A or B?'], { env });
+  assert.equal(post.status, 0, post.stderr);
+  const id = post.stdout.match(/\[([0-9]+-[a-z0-9]+)\]/)[1];
+
+  // an unrelated later message from the human does NOT close the question by itself
+  run(BUS, ['post', 'sonda', '01', '--from', 'humano', '--to', 'piloto', '--kind', 'status', 'unrelated chatter'], { env });
+  setStatus(path.join(taskDir, 'meta.json'), 'concluida');
+  let res = run(CHECK, ['sonda', '01'], { env });
+  assert.equal(res.status, 1);
+  assert.match(res.stdout, /gate.*unanswered/);
+
+  // linking to it explicitly clears it
+  const answer = run(BUS, ['post', 'sonda', '01', '--from', 'humano', '--to', 'piloto', '--meta', `{"responde":"${id}"}`, '--kind', 'status', 'B'], { env });
+  assert.equal(answer.status, 0, answer.stderr);
+  res = run(CHECK, ['sonda', '01'], { env });
+  assert.equal(res.status, 0);
+
+  fs.rmSync(T, { recursive: true, force: true });
 });
 
 test('lint: aceito guardrail with no reason fails', () => {

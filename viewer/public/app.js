@@ -496,38 +496,73 @@ function renderTabs() {
 }
 
 // --- Room panel: timeline of the conversation between agents (and the human) ---
+// A question/decision to the human closes by an explicit LINK (tools/perguntas.mjs,
+// annotated server-side into m.pergunta), never by message order — so its badge and
+// its "closed by" line reflect m.pergunta.estado/.fechadaPor, not just "is there
+// something later".
+const PERG_LABEL = { aberta: 'open', respondida: 'answered', dispensada: 'declined' };
 function renderSala(task) {
   const msgs = task.messages || [];
   if (!msgs.length) return '<div class="panel-empty">no messages yet — the agents\' conversation shows up here</div>';
   const items = msgs.map((m, i) => {
     const kind = MSGKIND(m.kind);
-    const ask = m.to === 'humano' && (m.kind === 'question' || m.kind === 'decision');
-    const key = `${state.repo}/${state.task}/${m.ts || ''}#${i}`;
+    const pergunta = m.pergunta || null;
+    const key = `${state.repo}/${state.task}/${m.id || m.ts || ''}#${i}`;
     const stateBadge =
       m.kind === 'status' && m.meta?.state ? `<span class="msg-state">${esc(m.meta.state)}</span>` : '';
-    // a reply to a question becomes a report; a reply to a decision request becomes a decision.
-    // The static page doesn't write to the bus: the pending item becomes a record, with no reply box.
-    const reply = !ask
-      ? ''
-      : STATIC
-        ? '<div class="reply-static">awaiting reply</div>'
-        : `<form class="reply" data-to="${esc(m.from)}" data-kind="${m.kind === 'question' ? 'report' : 'decision'}">
-          <input class="reply-input" data-key="${esc(key)}" placeholder="reply to ${esc(m.from)}…" autocomplete="off" />
-          <button type="submit">send</button><span class="reply-err"></span></form>`;
-    return `<div class="msg kind-${kind}${ask ? ' ask' : ''}">
+    let pergBlock = '';
+    if (pergunta) {
+      const badge = `<span class="perg-badge perg-${pergunta.estado}">${PERG_LABEL[pergunta.estado] || pergunta.estado}</span>`;
+      if (pergunta.estado === 'aberta') {
+        // The static page doesn't write to the bus: the pending item becomes a
+        // record, with no reply box at all.
+        pergBlock = STATIC
+          ? `${badge}<div class="reply-static">awaiting reply</div>`
+          : `${badge}<form class="reply" data-to="${esc(m.from)}" data-kind="${m.kind === 'question' ? 'report' : 'decision'}" data-msg-id="${esc(m.id || '')}">
+              <input class="reply-input" data-key="${esc(key)}" placeholder="reply to ${esc(m.from)}…" autocomplete="off" />
+              <button type="submit" class="reply-answer">answer</button>
+              <button type="button" class="reply-dismiss">don't answer</button>
+              <span class="reply-err"></span></form>`;
+      } else {
+        const closer = pergunta.fechadaPor;
+        pergBlock = `${badge}${
+          closer
+            ? `<div class="perg-closed-by"><span class="msg-ts">${shortTs(closer.ts)}</span> ${esc(closer.from)}: ${esc(closer.body)}</div>`
+            : ''
+        }`;
+      }
+    }
+    return `<div class="msg kind-${kind}${pergunta ? ' ask' : ''}">
       <div class="msg-head"><span class="msg-ts" title="${esc(m.ts || '')}">${shortTs(m.ts)}</span>
         <span class="msg-route">${esc(m.from || '?')} → ${esc(m.to || '?')}</span>
         <span class="msg-kind k-${kind}">${esc(m.kind || '?')}</span>${stateBadge}</div>
-      <div class="msg-body">${esc(m.body || '')}</div>${reply}</div>`;
+      <div class="msg-body">${esc(m.body || '')}</div>${pergBlock}</div>`;
   });
   return `<div class="sala">${items.join('')}</div>`;
 }
 const MSGKIND = (k) => (['report', 'question', 'decision', 'approval', 'status'].includes(k) ? k : 'report');
 
+// Posts a reply to /api/bus, linked to `msgId` via meta.responde or
+// meta.dispensa — the link is what closes the question, not just posting
+// after it. On success, clears the draft and clears the submitting form's error.
+async function postSalaReply(f, { to, kind, body, msgId, link }) {
+  const err = f.querySelector('.reply-err');
+  err.textContent = '';
+  const meta = msgId ? { [link]: msgId } : undefined;
+  const r = await fetch('/api/bus', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ repo: state.repo, task: state.task, from: 'humano', to, kind, body, meta }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+}
+
 function wireSala(content) {
   if (STATIC) return; // no reply box on the shared page
   content.querySelectorAll('form.reply').forEach((f) => {
     const input = f.querySelector('.reply-input');
+    const msgId = f.dataset.msgId || null;
     if (salaDrafts[input.dataset.key]) input.value = salaDrafts[input.dataset.key];
     input.oninput = () => {
       salaDrafts[input.dataset.key] = input.value;
@@ -546,26 +581,37 @@ function wireSala(content) {
       e.preventDefault();
       const body = input.value.trim();
       if (!body) return;
-      const err = f.querySelector('.reply-err');
-      const btn = f.querySelector('button');
-      err.textContent = '';
-      btn.disabled = true;
+      const btns = f.querySelectorAll('button');
+      btns.forEach((b) => (b.disabled = true));
       try {
-        const r = await fetch('/api/bus', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ repo: state.repo, task: state.task, from: 'humano', to: f.dataset.to, kind: f.dataset.kind, body }),
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+        await postSalaReply(f, { to: f.dataset.to, kind: f.dataset.kind, body, msgId, link: 'responde' });
         input.value = '';
         delete salaDrafts[input.dataset.key];
         salaStick = true; // the reply arrives via SSE — scroll to it
       } catch (e2) {
-        err.textContent = e2.message;
+        f.querySelector('.reply-err').textContent = e2.message;
       }
-      btn.disabled = false;
+      btns.forEach((b) => (b.disabled = false));
     };
+    const dismissBtn = f.querySelector('.reply-dismiss');
+    if (dismissBtn) {
+      dismissBtn.onclick = async () => {
+        // the typed text (if any) becomes the reason for declining; otherwise a
+        // plain default — either way the question closes as "dispensada", never "respondida".
+        const body = input.value.trim() || 'declined — no answer needed';
+        const btns = f.querySelectorAll('button');
+        btns.forEach((b) => (b.disabled = true));
+        try {
+          await postSalaReply(f, { to: f.dataset.to, kind: 'status', body, msgId, link: 'dispensa' });
+          input.value = '';
+          delete salaDrafts[input.dataset.key];
+          salaStick = true;
+        } catch (e2) {
+          f.querySelector('.reply-err').textContent = e2.message;
+        }
+        btns.forEach((b) => (b.disabled = false));
+      };
+    }
   });
 }
 

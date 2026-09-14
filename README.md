@@ -47,7 +47,7 @@ From there, talk to the agent. As it plans the task, the decomposition gets reco
 
 `node viewer/server.mjs` comes up on `http://localhost:4500`, listening only on `127.0.0.1`. Per task, it brings: **Room** (bus messages), **DAG** (nodes and guardrails, live), **Logs**, **Costs**, **Diff** (the commits recorded on the task, plus the ones from the period it was open) and **Timeline**, plus the task's files; and, per repo, an **Overview** with the agent roster, access, runtime and progress. File changes arrive via SSE — no need to reload.
 
-When an agent asks the human a question, you answer through the panel itself (it posts to the bus) or through the conversation.
+When an agent asks the human a question, you answer through the panel itself (it posts to the bus) or through the conversation. A question closes by an explicit link to its id, not by whichever message comes next — the panel's "answer"/"don't answer" buttons record that link for you; answering in the conversation instead, the pilot records it on your behalf.
 
 ## Tools
 
@@ -57,7 +57,7 @@ All of them run from the project root, with no magic arguments:
 |---|---|
 | Create repo | `node tools/new-repo.mjs "<Title>" [--slug <slug>]` |
 | Create task | `node tools/new-task.mjs <repo> "<Title>" [--depends-on "01,02"]` |
-| Message on the bus (Room) | `node tools/bus.mjs post <repo> <task> --from X --to Y --kind report\|question\|decision\|approval\|status "body"` |
+| Message on the bus (Room) | `node tools/bus.mjs post <repo> <task> --from X --to Y --kind report\|question\|decision\|approval\|status "body"` — prints the message's id; close a question with `--meta '{"responde":"<id>"}'` or `'{"dispensa":"<id>"}'` |
 | Operational log | `node tools/bus.mjs log <repo> <task> --level debug\|info\|warn\|error --source S "body"` |
 | Read messages | `node tools/bus.mjs read <repo> <task> [--to X] [--kind K] [--since ISO] [--tail N]` |
 | Agents that acted | `node tools/bus.mjs agents <repo> [<task>]` |
