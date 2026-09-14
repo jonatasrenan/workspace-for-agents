@@ -32,7 +32,7 @@ cd workspace-for-agents
 # 1. create a project: repos/<slug>/ (metadata) + workspace/<slug>/ (git init)
 node tools/new-repo.mjs "My project"
 
-# 2. create the first task: statement, plan, journal and review from templates
+# 2. create the first task: brief, plan, journal and review from templates
 node tools/new-task.mjs my-project "Initial deploy"
 
 # 3. open the panel (loopback only; PORT and HOST can be overridden via env)
@@ -40,6 +40,8 @@ node viewer/server.mjs     # http://localhost:4500
 ```
 
 `repos/` and `workspace/` are ignored by git: they're **your** state, not the engine. A fresh clone starts empty — the panel opens with no repos until you create the first one.
+
+State created before the artifacts and fields were named in English migrates in one command: `node tools/migrate.mjs --all --dry-run` shows exactly what would change, `node tools/migrate.mjs --all` applies it (a single repo: `node tools/migrate.mjs <repo>`). Running it twice changes nothing.
 
 From there, talk to the agent. As it plans the task, the decomposition gets recorded as a DAG; as it executes, messages, logs and costs show up in the panel.
 
@@ -64,25 +66,26 @@ All of them run from the project root, with no magic arguments:
 | Record tokens | `node tools/costs.mjs add <repo> <task> --agent X (--in N --out N \| --total N) [--model m] [--label "..."]` |
 | Cost report | `node tools/costs.mjs report [<repo> [<task>]]` |
 | Write the DAG | `node tools/dag.mjs set <repo> <task>` (stdin = JSON) |
-| Status of a node | `node tools/dag.mjs node-status <repo> <task> <nodeId> todo\|executando\|concluida\|bloqueada [--force]` |
-| Guardrail verdict | `node tools/dag.mjs guardrail <repo> <task> <nodeId> <gid> pass\|falha\|pendente [--note "..."]` — accepted failure: `... aceito --accept "reason"` |
+| Status of a node | `node tools/dag.mjs node-status <repo> <task> <nodeId> todo\|running\|done\|blocked [--force]` |
+| Guardrail verdict | `node tools/dag.mjs guardrail <repo> <task> <nodeId> <gid> pass\|fail\|pending [--note "..."]` — accepted failure: `... accepted --accept "reason"` |
 | Catalog of guardrails | `node tools/dag.mjs pool [--tag t] [--category c]` |
 | View / validate DAG | `node tools/dag.mjs show <repo> <task>` · `validate <repo> <task>` |
 | Record a commit on the task | `node tools/commits.mjs add <repo> <task> <hash> [--msg "..."]` · `list <repo> <task>` |
 | Repo access (URLs) | `node tools/access.mjs add\|remove\|list <repo> [...]` |
-| Repo live state | `node tools/state.mjs set <repo> runtime\|ambiente\|origem` (stdin = JSON) · `show <repo>` |
+| Repo live state | `node tools/state.mjs set <repo> runtime\|environment\|origin` (stdin = JSON) · `show <repo>` |
 | Publish a repo | `node tools/share.mjs <repo> [--dry-run\|--off\|--delete\|--no-costs]` |
 | Deterministic workspace checks | `node tools/check.mjs [<repo> [<task>]] [--lint]` · `--rules` · `--hook [--soft]` |
 | Write cross-task memory | `node tools/learnings.mjs append --task <repo>/<task>` (stdin) · `promote "<title>" --task <repo>/<task>` · `note "<title>" "<text>"` |
 | PR review briefing / publish / CI gate | `node tools/pr-review.mjs [--base <ref>] [--head <sha>]` · `post [--pr N] [--dry-run] < verdict.json` · `verify --pr N --head <sha>` |
+| Migrate state written before the English rename | `node tools/migrate.mjs --all\|<repo> [--dry-run]` — renames the artifacts and rewrites keys/values under `repos/`; idempotent |
 
 ## Guardrails
 
-`guardrails/pool.json` is a catalog of reusable checks (each with an `aplica_a` list and a command/observation that proves it). When building the DAG, the pilot attaches to each node the guardrails whose `aplica_a` matches the node's tags. A node only closes as `concluida` once its guardrails are resolved — a failure can be explicitly **accepted**, with a recorded reason.
+`guardrails/pool.json` is a catalog of reusable checks (each with an `applies_to` list and a command/observation that proves it). When building the DAG, the pilot attaches to each node the guardrails whose `applies_to` matches the node's tags. A node only closes as `done` once its guardrails are resolved — a failure can be explicitly **accepted**, with a recorded reason.
 
 ## Deterministic checks
 
-`tools/check.mjs` runs no model — it's plain code checking the workspace, in two classes. **Structural** checks (`node tools/check.mjs [<repo> [<task>]]`) verify meta.json is readable with the fields the panel needs, and that a task marked `concluida` really has every DAG node done, no pending/failed guardrail, and no unanswered question to the human; they're wired into Claude Code's `Stop` hook (`.claude/settings.json`) and block the end of a turn until the pending item is addressed. **Lints** (`--lint`) check the quality of the trail (no internal-mechanics/evaluation vocabulary leaking into artifacts, no artifact left as a stub, the DAG matching the plan, accepted guardrails with a reason echoed in the journal, cost and commits recorded, no unanswered question) — these never block a turn, but fail when closing a task and in CI. Run `node tools/check.mjs --rules` to see exactly what each predicate requires and returns.
+`tools/check.mjs` runs no model — it's plain code checking the workspace, in two classes. **Structural** checks (`node tools/check.mjs [<repo> [<task>]]`) verify meta.json is readable with the fields the panel needs, and that a task marked `done` really has every DAG node done, no pending/failed guardrail, and no unanswered question to the human; they're wired into Claude Code's `Stop` hook (`.claude/settings.json`) and block the end of a turn until the pending item is addressed. **Lints** (`--lint`) check the quality of the trail (no internal-mechanics/evaluation vocabulary leaking into artifacts, no artifact left as a stub, the DAG matching the plan, accepted guardrails with a reason echoed in the journal, cost and commits recorded, no unanswered question) — these never block a turn, but fail when closing a task and in CI. Run `node tools/check.mjs --rules` to see exactly what each predicate requires and returns.
 
 ## Publishing a repo as a page
 

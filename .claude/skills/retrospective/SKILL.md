@@ -12,9 +12,9 @@ A retrospective exists to improve the next execution. A soft, feel-good pass des
 1. Resolve the target task (the active one; otherwise list and ask, with default on the most recent).
 2. Read `20-journal.md` (timeline, delegations, real vs planned state), `00-brief.md` (acceptance criteria and promised schedule), and the task's Room (`node tools/bus.mjs read <repo> <task>`) — the journal and the bus messages are the primary sources of evidence for the collaboration.
 3. `git -C workspace/<repo> log --oneline --stat` — commit rhythm is objective evidence: how long did the first commit take? Small, frequent commits or one big commit at the end? Do the messages state intent?
-4. Final state: which acceptance criteria from the statement were verified as met (the journal should say; if it doesn't, that's already a process gap).
+4. Final state: which acceptance criteria from the brief were verified as met (the journal should say; if it doesn't, that's already a process gap).
 5. The task's token cost: sum up the task's `costs.jsonl` (fed by `tools/costs.mjs` on each delegation) — total and per agent, with timestamps.
-6. The task's DAG (`node tools/dag.mjs show <repo> <task>`): nodes, deps, attached guardrails, % of completed nodes, and `aceito` guardrails with their reasons.
+6. The task's DAG (`node tools/dag.mjs show <repo> <task>`): nodes, deps, attached guardrails, % of completed nodes, and `accepted` guardrails with their reasons.
 
 ## The 4 lenses — each with the question it answers and the evidence behind it
 
@@ -23,7 +23,7 @@ For each lens: **what happened** (one or two sentences, concrete) and **evidence
 1. **Problem decomposition** — did the split into tasks and nodes match the actual work? Evidence: the DAG (nodes well sliced — neither a monolith nor crumbs — `depends_on` reflecting real dependencies, not a linear queue), `10-plan.md`, and the order in which nodes actually closed vs the order planned.
 2. **Delegation and tool choice** — what was delegated, to whom, with what instruction; what the pilot did by hand that an executor should have done instead. Evidence: the bus (briefings, `spawned`/`working`/`done` cycles), the journal.
 3. **Pace and parallelism** — did independent fronts run together, or did one wait on another that had no real dependency on it? Evidence: journal timestamps, and token cost per agent (a good lever shows a result delivered at proportional cost; tokens burned on rework or a vague briefing count against it).
-4. **Decisions and scope cuts** — what was decided, with what default, and what was consciously left out. Evidence: `decision` messages on the bus, the journal. A guardrail marked `aceito` counts here too: the recorded reason is either a defensible cut or an excuse ("no time", "I'll look at it later") — say which.
+4. **Decisions and scope cuts** — what was decided, with what default, and what was consciously left out. Evidence: `decision` messages on the bus, the journal. A guardrail marked `accepted` counts here too: the recorded reason is either a defensible cut or an excuse ("no time", "I'll look at it later") — say which.
 
 ## Recording
 

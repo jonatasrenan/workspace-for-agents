@@ -33,7 +33,7 @@ The caller decides what to fix; your job is that they never need to re-read the 
 
 The pilot's briefing informs `<repo>` and `<task>` — use them in every command below (run from the harness root).
 
-- **When starting work**: `node tools/bus.mjs post <repo> <task> --from test-runner --to piloto --kind status --meta '{"state":"working"}' "<what you're going to do, one line>"`.
+- **When starting work**: `node tools/bus.mjs post <repo> <task> --from test-runner --to pilot --kind status --meta '{"state":"working"}' "<what you're going to do, one line>"`.
 - **Important operational output** → `node tools/bus.mjs log <repo> <task> --level <level> --source test-runner "body"`. Level: routine command = `debug`; discovery = `info`; degradation = `warn`; failure = `error`. Long log: body `-` and the content via stdin (pipe/heredoc).
-- **Final report** → `node tools/bus.mjs post <repo> <task> --from test-runner --to piloto --kind report "<summary>"` with the verdict summary; the full report remains your normal return to the caller.
-- **A question only the human can decide** → `node tools/bus.mjs post <repo> <task> --from test-runner --to humano --kind question "<question>"` — and state in your return that you're waiting for the human's answer.
+- **Final report** → `node tools/bus.mjs post <repo> <task> --from test-runner --to pilot --kind report "<summary>"` with the verdict summary; the full report remains your normal return to the caller.
+- **A question only the human can decide** → `node tools/bus.mjs post <repo> <task> --from test-runner --to human --kind question "<question>"` — and state in your return that you're waiting for the human's answer.

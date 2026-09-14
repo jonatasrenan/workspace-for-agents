@@ -119,10 +119,10 @@ function readCosts(taskDir) {
 }
 
 function aggregate(entries, keyFn) {
-  const grupos = new Map();
+  const groups = new Map();
   for (const e of entries) {
     const key = keyFn(e);
-    const g = grupos.get(key) ?? { in: 0, out: 0, total: 0, usd: 0, approx: false, semSplit: false };
+    const g = groups.get(key) ?? { in: 0, out: 0, total: 0, usd: 0, approx: false, semSplit: false };
     if (Number.isFinite(e.tokens_in)) g.in += e.tokens_in;
     else g.semSplit = true;
     if (Number.isFinite(e.tokens_out)) g.out += e.tokens_out;
@@ -131,30 +131,30 @@ function aggregate(entries, keyFn) {
     const { usd, approx } = entryCost(e);
     g.usd += usd;
     g.approx = g.approx || approx;
-    grupos.set(key, g);
+    groups.set(key, g);
   }
-  return grupos;
+  return groups;
 }
 
-function printTable(titulo, grupos) {
-  if (!grupos.size) {
-    console.log(`${titulo}: no cost recorded`);
+function printTable(title, groups) {
+  if (!groups.size) {
+    console.log(`${title}: no cost recorded`);
     return;
   }
   const fmt = (n) => n.toLocaleString('en-US');
-  const linhas = [...grupos.entries()].map(([nome, g]) => [
+  const linhas = [...groups.entries()].map(([nome, g]) => [
     nome,
     g.semSplit && g.in === 0 ? '-' : fmt(g.in),
     g.semSplit && g.out === 0 ? '-' : fmt(g.out),
     fmt(g.total),
     `${g.approx ? '~' : ''}$${g.usd.toFixed(2)}`,
   ]);
-  const soma = [...grupos.values()].reduce(
+  const soma = [...groups.values()].reduce(
     (t, g) => ({ in: t.in + g.in, out: t.out + g.out, total: t.total + g.total, usd: t.usd + g.usd, approx: t.approx || g.approx }),
     { in: 0, out: 0, total: 0, usd: 0, approx: false }
   );
-  if (grupos.size > 1) linhas.push(['TOTAL', fmt(soma.in), fmt(soma.out), fmt(soma.total), `${soma.approx ? '~' : ''}$${soma.usd.toFixed(2)}`]);
-  const header = [titulo, 'in', 'out', 'total', 'USD'];
+  if (groups.size > 1) linhas.push(['TOTAL', fmt(soma.in), fmt(soma.out), fmt(soma.total), `${soma.approx ? '~' : ''}$${soma.usd.toFixed(2)}`]);
+  const header = [title, 'in', 'out', 'total', 'USD'];
   const larguras = header.map((h, c) => Math.max(h.length, ...linhas.map((l) => l[c].length)));
   const render = (l) => l.map((cel, c) => (c === 0 ? cel.padEnd(larguras[c]) : cel.padStart(larguras[c]))).join('  ');
   console.log(render(header));

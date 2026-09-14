@@ -285,10 +285,10 @@ function estimateUsd(costs, prices) {
   for (const c of costs) {
     // Same criteria as costs.mjs: exact match, otherwise the longest key contained
     // in the model name, otherwise default; only known total => in/out average.
-    let p = c.modelo != null ? prices[c.modelo] : undefined;
-    if (p == null && c.modelo != null) {
+    let p = c.model != null ? prices[c.model] : undefined;
+    if (p == null && c.model != null) {
       const key = Object.keys(prices)
-        .filter((k) => k !== 'default' && c.modelo.includes(k))
+        .filter((k) => k !== 'default' && c.model.includes(k))
         .sort((a, b) => b.length - a.length)[0];
       if (key) p = prices[key];
     }
@@ -741,7 +741,7 @@ function broadcastChange() {
 }
 
 // --- auto-republish of shared repos (tools/share.mjs) ---
-// Registry in .shares.json (root): { "shares": { "<repo>": { uuid, url, auto, custos } } }.
+// Registry in .shares.json (root): { "shares": { "<repo>": { uuid, url, auto, costs } } }.
 // A repo with auto !== false is re-published by the server itself when it changes — the
 // agent never deploys manually. `share.mjs <repo> --off` pauses; `--delete` removes.
 const publishState = new Map(); // slug -> { publishedAt, running, timer }

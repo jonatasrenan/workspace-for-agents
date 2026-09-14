@@ -317,7 +317,7 @@ function lintTask(repoSlug, repoDir, taskName, allowed) {
   // jargon — every artifact file, regardless of task status
   for (const file of ARTIFACT_FILES) out.push(...lintJargaoInFile(repoSlug, taskName, path.join(taskDir, file), file, allowed));
 
-  // stub — enunciado/plano block, journal/review warn; only meaningful once the
+  // stub — brief/plan block, journal/review warn; only meaningful once the
   // task is at least started (a fresh "todo" task is a stub by definition).
   const contents = {};
   for (const file of ARTIFACT_FILES) contents[file] = readIfExists(path.join(taskDir, file));

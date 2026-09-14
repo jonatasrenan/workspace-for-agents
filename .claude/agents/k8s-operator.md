@@ -39,15 +39,15 @@ Factual report, no prose. The caller is under a target time: every line of yours
 
 The pilot's briefing informs `<repo>` and `<task>` — use them in every command below (run from the harness root).
 
-- **When starting work**: `node tools/bus.mjs post <repo> <task> --from k8s-operator --to piloto --kind status --meta '{"state":"working"}' "<what you're going to do, one line>"`.
+- **When starting work**: `node tools/bus.mjs post <repo> <task> --from k8s-operator --to pilot --kind status --meta '{"state":"working"}' "<what you're going to do, one line>"`.
 - **Important operational output** → `node tools/bus.mjs log <repo> <task> --level <level> --source k8s-operator "body"`. Level: routine command = `debug`; discovery = `info`; degradation = `warn`; failure = `error`. Long log: body `-` and the content via stdin (pipe/heredoc).
-- **Final report** → `node tools/bus.mjs post <repo> <task> --from k8s-operator --to piloto --kind report "<summary>"` with the verdict summary; the full report remains your normal return to the caller.
-- **A question only the human can decide** → `node tools/bus.mjs post <repo> <task> --from k8s-operator --to humano --kind question "<question>"` — and state in your return that you're waiting for the human's answer.
+- **Final report** → `node tools/bus.mjs post <repo> <task> --from k8s-operator --to pilot --kind report "<summary>"` with the verdict summary; the full report remains your normal return to the caller.
+- **A question only the human can decide** → `node tools/bus.mjs post <repo> <task> --from k8s-operator --to human --kind question "<question>"` — and state in your return that you're waiting for the human's answer.
 
 ## Repo state (PUSH — as it happens, not at the end)
 
 After **each** operation that changes the cluster (deploy, scale, delete, rollout, port-forward), update the repo's state before reporting — the Overview panel only shows what you register:
 
-- **Runtime** → `node tools/state.mjs set <repo> runtime` with the JSON via stdin (heredoc), reflecting the REAL post-operation state: `{"deployments":[{"nome","ready":"2/2","restarts",N,"idade":"..."}],"imagens":["..."]}` (source: `kubectl get deployments,pods` and `minikube image ls`).
-- **Open access** (port-forward, exposed service) → `node tools/access.mjs add <repo> --name N --url U --type app|metricas|dashboard|outro --note "..."`. An ephemeral URL **always** with `--note` stating the exact command to recreate it (e.g. `kubectl port-forward svc/<name> 8080:80`; remember that `minikube service --url` blocks the terminal on macOS's docker driver).
+- **Runtime** → `node tools/state.mjs set <repo> runtime` with the JSON via stdin (heredoc), reflecting the REAL post-operation state: `{"deployments":[{"name","ready":"2/2","restarts",N,"age":"..."}],"images":["..."]}` (source: `kubectl get deployments,pods` and `minikube image ls`).
+- **Open access** (port-forward, exposed service) → `node tools/access.mjs add <repo> --name N --url U --type app|metrics|dashboard|other --note "..."`. An ephemeral URL **always** with `--note` stating the exact command to recreate it (e.g. `kubectl port-forward svc/<name> 8080:80`; remember that `minikube service --url` blocks the terminal on macOS's docker driver).
 - **Access taken down** (port-forward ended, service deleted) → `node tools/access.mjs remove <repo> --name N` in the same act.

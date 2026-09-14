@@ -3,16 +3,16 @@ import assert from 'node:assert/strict';
 import { newId, messageRef, refIndex, isQuestion, questionStates, openQuestions } from './questions.mjs';
 
 function q(id, ts) {
-  return { id, ts, from: 'piloto', to: 'humano', kind: 'question', body: `q-${id}` };
+  return { id, ts, from: 'pilot', to: 'human', kind: 'question', body: `q-${id}` };
 }
-function answer(ts, respondeRef, from = 'humano') {
-  return { id: newId(ts), ts, from, to: 'piloto', kind: 'status', body: 'ok', meta: { answers: respondeRef } };
+function answer(ts, answersRef, from = 'human') {
+  return { id: newId(ts), ts, from, to: 'pilot', kind: 'status', body: 'ok', meta: { answers: answersRef } };
 }
-function dismiss(ts, dispensaRef, from = 'humano') {
-  return { id: newId(ts), ts, from, to: 'piloto', kind: 'status', body: 'skip', meta: { dismisses: dispensaRef } };
+function dismiss(ts, dismissesRef, from = 'human') {
+  return { id: newId(ts), ts, from, to: 'pilot', kind: 'status', body: 'skip', meta: { dismisses: dismissesRef } };
 }
 function humanNoLink(ts) {
-  return { id: newId(ts), ts, from: 'humano', to: 'piloto', kind: 'status', body: 'hi' };
+  return { id: newId(ts), ts, from: 'human', to: 'pilot', kind: 'status', body: 'hi' };
 }
 
 test('newId: two calls at the same ts do not collide', () => {
@@ -21,11 +21,11 @@ test('newId: two calls at the same ts do not collide', () => {
   assert.notEqual(a, b);
 });
 
-test('isQuestion: only kind question|decision addressed to humano counts', () => {
-  assert.equal(isQuestion({ to: 'humano', kind: 'question' }), true);
-  assert.equal(isQuestion({ to: 'humano', kind: 'decision' }), true);
-  assert.equal(isQuestion({ to: 'humano', kind: 'status' }), false);
-  assert.equal(isQuestion({ to: 'piloto', kind: 'question' }), false);
+test('isQuestion: only kind question|decision addressed to human counts', () => {
+  assert.equal(isQuestion({ to: 'human', kind: 'question' }), true);
+  assert.equal(isQuestion({ to: 'human', kind: 'decision' }), true);
+  assert.equal(isQuestion({ to: 'human', kind: 'status' }), false);
+  assert.equal(isQuestion({ to: 'pilot', kind: 'question' }), false);
 });
 
 test('messageRef/refIndex: id when present, "<ts>#<index>" fallback otherwise', () => {
@@ -76,7 +76,7 @@ test('a link to a nonexistent reference is a no-op — the question stays open',
 });
 
 test('legacy fallback: a human message with no link closes earlier id-less questions only', () => {
-  const idless = { ts: 't1', from: 'piloto', to: 'humano', kind: 'question', body: 'old question, no id' };
+  const idless = { ts: 't1', from: 'pilot', to: 'human', kind: 'question', body: 'old question, no id' };
   const withId = q('q2', 't2');
   const msgs = [idless, withId, humanNoLink('t3')];
   const states = questionStates(msgs);
@@ -85,9 +85,27 @@ test('legacy fallback: a human message with no link closes earlier id-less quest
 });
 
 test('legacy fallback never fires when the closing human message itself carries a link', () => {
-  const idless = { ts: 't1', from: 'piloto', to: 'humano', kind: 'question', body: 'old question, no id' };
+  const idless = { ts: 't1', from: 'pilot', to: 'human', kind: 'question', body: 'old question, no id' };
   const msgs = [idless, answer('t2', 't1#0')]; // linked explicitly instead of positionally
   const states = questionStates(msgs);
   assert.equal(states[0].state, 'answered');
   assert.equal(states[0].closedByIndex, 1);
+});
+
+// Trail written before the rename: "humano" as the actor and responde/dispensa as
+// the link. It is read by the same rule, or a task in flight would reopen
+// questions that were already answered.
+test('pre-rename trail: "humano" + responde/dispensa still close the question', () => {
+  const q1 = { id: 'q1', ts: 't1', from: 'piloto', to: 'humano', kind: 'question', body: 'A ou B?' };
+  const q2 = { id: 'q2', ts: 't2', from: 'piloto', to: 'humano', kind: 'question', body: 'C?' };
+  const msgs = [
+    q1,
+    q2,
+    { id: 'a1', ts: 't3', from: 'humano', to: 'piloto', kind: 'status', body: 'B', meta: { responde: 'q1' } },
+    { id: 'd1', ts: 't4', from: 'humano', to: 'piloto', kind: 'status', body: 'skip', meta: { dispensa: 'q2' } },
+  ];
+  const states = questionStates(msgs);
+  assert.equal(states[0].state, 'answered');
+  assert.equal(states[1].state, 'dismissed');
+  assert.equal(openQuestions(msgs).length, 0);
 });

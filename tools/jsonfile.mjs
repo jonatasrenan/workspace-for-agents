@@ -1,7 +1,7 @@
 // Reads and writes state JSON safely under concurrent processes.
 //
 // The studio has agents work in parallel, and several of them write to the
-// same files (meta.json, agents.json, dag.json, acessos.json, estado.json).
+// same files (meta.json, agents.json, dag.json, access.json, state.json).
 // A naive read-modify-write loses updates and, worse, leaves the file half
 // written when two writes overlap. Here:
 //   - writeJson: writes to a tmp file in the same directory and renames it (rename is
