@@ -1,19 +1,19 @@
-# Aprendizados
+# Learnings
 
-Base de conhecimento acumulada entre repos e tasks. Cada item nasce de uma retrospectiva de task, de uma correção durante a execução, ou de pesquisa. Status: **aberto** (ainda erro/esqueço) → **dominado** (demonstrado com solidez em task posterior).
+Knowledge base accumulated across repos and tasks. Each item is born from a task retrospective, a correction made during execution, or research. Status: **open** (still a mistake/forgotten) → **mastered** (solidly demonstrated in a later task).
 
-O piloto lê este arquivo ao iniciar qualquer sessão e usa os itens **abertos** ativamente: alerta antes de você repetir o erro e vigia essas áreas durante a execução.
+The pilot reads this file at the start of any session and actively uses the **open** items: it warns before you repeat the mistake and watches those areas during execution.
 
-Formato de cada item:
+Format of each item:
 
 ```
-## <tema curto>
-- **Status**: aberto | dominado
-- **Origem**: repos/<repo>/tasks/<nn>-<slug> (data)
-- **Aprendizado**: o que ficou claro, em 1-3 frases.
-- **Como aplicar**: gatilho prático para a próxima vez.
+## <short topic>
+- **Status**: open | mastered
+- **Origin**: repos/<repo>/tasks/<nn>-<slug> (date)
+- **Learning**: what became clear, in 1-3 sentences.
+- **How to apply**: the practical trigger for next time.
 ```
 
 ---
 
-_(sem itens ainda — o arquivo cresce a cada retrospectiva)_
+_(no items yet — the file grows with each retrospective)_

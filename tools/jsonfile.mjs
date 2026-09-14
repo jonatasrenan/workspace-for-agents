@@ -1,17 +1,17 @@
-// Leitura e escrita de JSON de estado com segurança para processos concorrentes.
+// Reads and writes state JSON safely under concurrent processes.
 //
-// O estúdio manda agentes trabalharem em paralelo, e vários deles escrevem nos
-// mesmos arquivos (meta.json, agents.json, dag.json, acessos.json, estado.json).
-// Um read-modify-write ingênuo perde atualizações e, pior, deixa o arquivo pela
-// metade quando duas escritas se cruzam. Aqui:
-//   - writeJson: grava num tmp do mesmo diretório e renomeia (rename é atômico
-//     no mesmo filesystem) — leitor nenhum enxerga arquivo parcial;
-//   - updateJson: serializa o ciclo ler→alterar→gravar com um lock de diretório
-//     (mkdir é atômico), com espera curta e lock velho descartado.
+// The studio has agents work in parallel, and several of them write to the
+// same files (meta.json, agents.json, dag.json, acessos.json, estado.json).
+// A naive read-modify-write loses updates and, worse, leaves the file half
+// written when two writes overlap. Here:
+//   - writeJson: writes to a tmp file in the same directory and renames it (rename is
+//     atomic on the same filesystem) — no reader ever sees a partial file;
+//   - updateJson: serializes the read→modify→write cycle with a directory lock
+//     (mkdir is atomic), with a short wait and a stale lock discarded.
 import fs from 'node:fs';
 import path from 'node:path';
 
-const LOCK_TENTATIVAS = 100; // ~2s de espera total
+const LOCK_TENTATIVAS = 100; // ~2s total wait
 const LOCK_ESPERA_MS = 20;
 const LOCK_VELHO_MS = 15_000;
 
@@ -37,12 +37,12 @@ export function readJson(file, fallback = undefined) {
 }
 
 function esperar(ms) {
-  // Espera bloqueante: estas ferramentas são scripts curtos e síncronos.
+  // Blocking wait: these tools are short, synchronous scripts.
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-// Locks vivos deste processo: uma ferramenta que aborta com process.exit no meio
-// de um update não pode deixar o lock para trás e travar a próxima.
+// Locks held by this process: a tool that aborts with process.exit in the middle
+// of an update must not leave the lock behind and block the next one.
 const LOCKS_ABERTOS = new Set();
 process.on('exit', () => {
   for (const lock of LOCKS_ABERTOS) {
@@ -60,7 +60,7 @@ function adquirirLock(file) {
       LOCKS_ABERTOS.add(lock);
       return lock;
     } catch {
-      // Lock de um processo que morreu no meio não pode travar o estúdio.
+      // A lock from a process that died mid-way must not block the studio.
       try {
         if (Date.now() - fs.statSync(lock).mtimeMs > LOCK_VELHO_MS) {
           fs.rmSync(lock, { recursive: true, force: true });
@@ -70,11 +70,11 @@ function adquirirLock(file) {
       esperar(LOCK_ESPERA_MS);
     }
   }
-  return null; // sem lock, seguimos assim mesmo: melhor gravar do que travar
+  return null; // no lock, proceed anyway: better to write than to hang
 }
 
-// Aplica `fn` ao conteúdo atual do arquivo e grava o retorno. `fallback` é o
-// valor usado quando o arquivo não existe ou está ilegível.
+// Applies `fn` to the file's current contents and writes the return value. `fallback` is the
+// value used when the file doesn't exist or is unreadable.
 export function updateJson(file, fallback, fn) {
   const lock = adquirirLock(file);
   try {

@@ -1,10 +1,10 @@
-// Cria uma task de repo a partir dos templates (cabeçalhos prontos, LLM só preenche).
-// Uso: node tools/new-task.mjs <repo-slug> "Título da task" [--depends-on "01,02"]
-// Cria repos/<repo>/tasks/<nn>-<slug>/ com meta.json + os 4 .md;
-// nn é o próximo número livre (01, 02, ...). Atualiza meta.updated do repo.
-// --depends-on: lista separada por vírgula de tasks já existentes no repo (prefixo
-// numérico ou nome completo); grava "depends_on": ["<nn-slug>", ...] no meta.json
-// da task criada. Campo ausente = sem dependência.
+// Creates a repo task from the templates (headers ready-made, LLM only fills them in).
+// Usage: node tools/new-task.mjs <repo-slug> "Task title" [--depends-on "01,02"]
+// Creates repos/<repo>/tasks/<nn>-<slug>/ with meta.json + the 4 .md files;
+// nn is the next free number (01, 02, ...). Updates the repo's meta.updated.
+// --depends-on: comma-separated list of tasks that already exist in the repo (numeric
+// prefix or full name); writes "depends_on": ["<nn-slug>", ...] to the created task's
+// meta.json. Field absent = no dependency.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,16 +12,16 @@ import { TASK_TEMPLATES, slugify } from './templates.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// Resolve os itens de --depends-on (prefixo "01" ou nome completo) contra a lista
-// de tasks existentes; retorna nomes completos, sem duplicatas. Lança Error com
-// mensagem clara (listando as tasks do repo) quando algum item não existe.
+// Resolves the --depends-on items (prefix "01" or full name) against the list
+// of existing tasks; returns full names, without duplicates. Throws an Error with a
+// clear message (listing the repo's tasks) when an item doesn't exist.
 export function resolveDependsOn(raw, tasks) {
   const tokens = String(raw)
     .split(',')
     .map((t) => t.trim())
     .filter(Boolean);
   if (!tokens.length) {
-    throw new Error('--depends-on vazio — passe uma lista separada por vírgula (ex.: "01,02")');
+    throw new Error('--depends-on is empty — pass a comma-separated list (e.g.: "01,02")');
   }
   const resolved = [];
   for (const t of tokens) {
@@ -29,7 +29,7 @@ export function resolveDependsOn(raw, tasks) {
     const match = tasks.find((d) => d === t) ?? (prefixo && tasks.find((d) => d.startsWith(`${prefixo}-`)));
     if (!match) {
       throw new Error(
-        `dependência não encontrada: "${t}"${tasks.length ? ` — tasks existentes: ${tasks.join(', ')}` : ' — nenhuma task criada ainda neste repo'}`
+        `dependency not found: "${t}"${tasks.length ? ` — existing tasks: ${tasks.join(', ')}` : ' — no task created yet in this repo'}`
       );
     }
     if (!resolved.includes(match)) resolved.push(match);
@@ -44,12 +44,12 @@ function main() {
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--depends-on') {
       if (i + 1 >= argv.length) {
-        console.error('--depends-on exige um valor (ex.: --depends-on "01,02")');
+        console.error('--depends-on requires a value (e.g.: --depends-on "01,02")');
         process.exit(1);
       }
       dependsOnRaw = argv[++i];
     } else if (argv[i].startsWith('--')) {
-      console.error(`flag desconhecida: ${argv[i]} (aceita: --depends-on)`);
+      console.error(`unknown flag: ${argv[i]} (accepted: --depends-on)`);
       process.exit(1);
     } else {
       pos.push(argv[i]);
@@ -57,12 +57,12 @@ function main() {
   }
   const [repoSlug, title] = pos;
   if (!repoSlug || !title) {
-    console.error('uso: node tools/new-task.mjs <repo-slug> "Título da task" [--depends-on "01,02"]');
+    console.error('usage: node tools/new-task.mjs <repo-slug> "Task title" [--depends-on "01,02"]');
     process.exit(1);
   }
 
   if (/[/\\]|\.\./.test(repoSlug)) {
-    console.error(`repo inválido: "${repoSlug}" — use só o slug do repo (sem barras nem "..")`);
+    console.error(`invalid repo: "${repoSlug}" — use only the repo slug (no slashes or "..")`);
     process.exit(1);
   }
   const repoDir = path.join(ROOT, 'repos', repoSlug);
@@ -70,13 +70,13 @@ function main() {
     const existentes = fs.existsSync(path.join(ROOT, 'repos'))
       ? fs.readdirSync(path.join(ROOT, 'repos')).filter((d) => !d.startsWith('.'))
       : [];
-    console.error(`repo não encontrado: ${repoSlug}${existentes.length ? ` — existentes: ${existentes.join(', ')}` : ' — nenhum repo criado ainda (use new-repo.mjs)'}`);
+    console.error(`repo not found: ${repoSlug}${existentes.length ? ` — existing: ${existentes.join(', ')}` : ' — no repo created yet (use new-repo.mjs)'}`);
     process.exit(1);
   }
 
   const slug = slugify(title);
   if (!slug) {
-    console.error(`título não gera slug válido: "${title}"`);
+    console.error(`title does not produce a valid slug: "${title}"`);
     process.exit(1);
   }
 
@@ -84,7 +84,7 @@ function main() {
   fs.mkdirSync(tasksDir, { recursive: true });
   const existing = fs.readdirSync(tasksDir).filter((d) => /^\d{2}-/.test(d)).sort();
   if (existing.some((d) => d.replace(/^\d{2}-/, '') === slug)) {
-    console.error(`task já existe: ${existing.find((d) => d.replace(/^\d{2}-/, '') === slug)}`);
+    console.error(`task already exists: ${existing.find((d) => d.replace(/^\d{2}-/, '') === slug)}`);
     process.exit(1);
   }
 
@@ -111,7 +111,7 @@ function main() {
     fs.writeFileSync(path.join(taskDir, file), content);
   }
 
-  // atualiza updated do repo
+  // update the repo's updated field
   const metaPath = path.join(repoDir, 'meta.json');
   const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
   meta.updated = today;
@@ -119,14 +119,14 @@ function main() {
 
   console.log(taskName);
   console.log(
-    `criados: repos/${repoSlug}/tasks/${taskName}/ (meta.json, ${Object.values(TASK_TEMPLATES)
+    `created: repos/${repoSlug}/tasks/${taskName}/ (meta.json, ${Object.values(TASK_TEMPLATES)
       .map(([f]) => f)
       .join(', ')})`
   );
-  if (dependsOn) console.log(`depende de: ${dependsOn.join(', ')}`);
+  if (dependsOn) console.log(`depends on: ${dependsOn.join(', ')}`);
 }
 
-// Guard: só executa como CLI (permite importar resolveDependsOn em testes).
+// Guard: only runs as CLI (allows importing resolveDependsOn in tests).
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main();
 }

@@ -1,94 +1,94 @@
-// Templates dos artefatos de repo/task — módulo compartilhado entre new-repo.mjs,
-// new-task.mjs e o viewer (detecção de stub: aba laranja enquanto o template não foi tocado).
+// Repo/task artifact templates — module shared between new-repo.mjs,
+// new-task.mjs and the viewer (stub detection: orange tab while the template hasn't been touched).
 
-// 00-contexto.md do repo (fica em repos/<slug>/, fora do workspace)
+// Repo's 00-contexto.md (lives in repos/<slug>/, outside the workspace)
 export const CONTEXTO_TEMPLATE = [
   '00-contexto.md',
-  `# Contexto
+  `# Context
 
-## Objetivo do repo
-_(o que este repo prova/entrega, em 2-3 frases)_
+## Repo objective
+_(what this repo proves/delivers, in 2-3 sentences)_
 
-## Enunciado macro
-_(o problema geral do qual as tarefas derivam)_
+## Macro statement
+_(the general problem the tasks derive from)_
 
-## Stack e ambiente
-_(linguagens, frameworks, o que roda em Docker vs minikube)_
+## Stack and environment
+_(languages, frameworks, what runs on Docker vs minikube)_
 
-## Fora de escopo
-_(o que conscientemente NÃO entra)_
+## Out of scope
+_(what deliberately does NOT go in)_
 `,
 ];
 
-// Etapas de uma task: [arquivo, conteúdo]
+// A task's stages: [file, content]
 export const TASK_TEMPLATES = {
   enunciado: [
     '00-enunciado.md',
-    `# Enunciado
+    `# Statement
 
-## Objetivo
-_(ainda não definido)_
+## Objective
+_(not yet defined)_
 
-## Requisitos
-_(ainda não definido)_
+## Requirements
+_(not yet defined)_
 
-## Critérios de aceite
-_(o que precisa estar rodando/demonstrável ao final)_
+## Acceptance criteria
+_(what needs to be running/demonstrable at the end)_
 
-## Tempo-alvo
-_(ainda não definido)_
+## Target time
+_(not yet defined)_
 `,
   ],
   plano: [
     '10-plano.md',
-    `# Plano
+    `# Plan
 
-## Decomposição
-_(o problema em 3-6 partes atacáveis, ordem de ataque, cada uma com critério de pronto)_
+## Decomposition
+_(the problem broken into 3-6 attackable parts, order of attack, each one with a definition of done)_
 
-| # | Parte | Pronto quando | Quem faz |
+| # | Part | Done when | Who does it |
 |---|---|---|---|
 
-## Delegação
-_(o que vai para a IA — e com qual instrução — vs o que fica na mão; onde há paralelismo)_
+## Delegation
+_(what goes to AI — and with what instruction — vs what stays hands-on; where there's parallelism)_
 
-## Riscos do plano
-_(o que pode estourar o tempo e o plano B de cada um)_
+## Plan risks
+_(what could blow the schedule, and each one's plan B)_
 `,
   ],
   journal: [
     '20-journal.md',
     `# Journal
 
-_(diário timestampado da execução — uma linha por evento: decisão, delegação, resultado, correção de rumo. Formato: \`HH:MM — evento\`)_
+_(timestamped execution diary — one line per event: decision, delegation, result, course correction. Format: \`HH:MM — event\`)_
 `,
   ],
   review: [
     '30-review.md',
     `# Review
 
-_(nota e evidência por critério, depois o que mudar na próxima)_
+_(score and evidence per criterion, then what to change next time)_
 
-## Avaliação
+## Evaluation
 
-| Critério | Nota (1-5) | Evidência |
+| Criterion | Score (1-5) | Evidence |
 |---|---|---|
-| Decomposição | | |
-| Delegação e ferramentas | | |
-| Velocidade com IA | | |
-| Decisões | | |
+| Decomposition | | |
+| Delegation and tools | | |
+| Speed with AI | | |
+| Decisions | | |
 
-## O que funcionou
+## What worked
 
-## O que mudar na próxima
-_(itens acionáveis, 1 linha cada)_
+## What to change next time
+_(actionable items, 1 line each)_
 `,
   ],
 };
 
-// Slug de título: minúsculas, sem acento, palavras ligadas por hífen.
-// Limite de ~40 chars cortando sempre em fronteira de palavra inteira
-// (nunca no meio de uma palavra, nunca com hífen pendurado no fim).
+// Title slug: lowercase, no accents, words joined by hyphens.
+// ~40 char limit, always cutting on a whole-word boundary
+// (never mid-word, never with a trailing hyphen at the end).
 export const slugify = (s, max = 42) => {
   const full = s
     .normalize('NFD')
@@ -97,13 +97,13 @@ export const slugify = (s, max = 42) => {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
   if (full.length <= max) return full;
-  if (full[max] === '-') return full.slice(0, max); // corte cai exatamente numa fronteira
+  if (full[max] === '-') return full.slice(0, max); // the cut lands exactly on a boundary
   const cut = full.slice(0, max);
   const at = cut.lastIndexOf('-');
-  return at > 0 ? cut.slice(0, at) : cut; // palavra única maior que o limite: corta seca
+  return at > 0 ? cut.slice(0, at) : cut; // single word longer than the limit: hard cut
 };
 
-// filename -> conteúdo (para detectar stub por comparação exata)
+// filename -> content (to detect a stub by exact comparison)
 export const TEMPLATE_BY_FILE = Object.fromEntries([
   CONTEXTO_TEMPLATE,
   ...Object.values(TASK_TEMPLATES),
