@@ -72,6 +72,7 @@ All of them run from the project root, with no magic arguments:
 | Repo live state | `node tools/estado.mjs set <repo> runtime\|ambiente\|origem` (stdin = JSON) · `show <repo>` |
 | Publish a repo | `node tools/share.mjs <repo> [--dry-run\|--off\|--delete\|--sem-custos]` |
 | Deterministic workspace checks | `node tools/check.mjs [<repo> [<task>]] [--lint]` · `--regras` · `--hook [--soft]` |
+| Write cross-task memory | `node tools/learnings.mjs append --task <repo>/<task>` (stdin) · `promote "<title>" --task <repo>/<task>` · `note "<title>" "<text>"` |
 
 ## Guardrails
 
@@ -98,7 +99,8 @@ Without the variables configured, the command fails saying exactly what's missin
 ```
 workspace-for-agents/
 ├── CLAUDE.md              # pilot agent instructions
-├── learnings.md           # memory across tasks (open/mastered items)
+├── learnings.md           # memory across tasks (open/mastered items) — written only via tools/learnings.mjs
+├── learnings.template.md  # seed for a fork that wants to start with empty memory
 ├── .claude/
 │   ├── agents/            # executors: k8s-operator, log-reader, metrics-reader,
 │   │                      # test-runner, adversarial-reviewer

@@ -9,8 +9,12 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { CONTEXTO_TEMPLATE, slugify } from './templates.mjs';
 import { stateRoot } from './root.mjs';
+import { ensureMemoryFiles } from './fs.mjs';
 
 const ROOT = stateRoot();
+// This is the session's entry point: a fresh WFA_ROOT (or a fresh clone) gets
+// its learnings.md seeded here, once, instead of every tool having to check.
+ensureMemoryFiles(ROOT);
 const args = process.argv.slice(2);
 // Explicit parsing: the --slug value must not be confused with the title, and
 // an unknown flag is an error (silently ignoring it would create the wrong repo).

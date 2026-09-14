@@ -55,7 +55,7 @@ The user talks in natural language — they **don't** know or need to call tools
 
 ## At the start of any session
 
-Read `learnings.md` and actively use the **open** items: warn before the user repeats the mistake, and watch exactly those areas during execution. When fixing something relevant or closing a review, add/update items — without duplicating; an open item demonstrated solidly gets promoted to `dominado`, citing the task that proved it.
+Read `learnings.md` and actively use the **open** items: warn before the user repeats the mistake, and watch exactly those areas during execution. When fixing something relevant or closing a review, add/update items **through `node tools/learnings.mjs append|promote|note`** — never by reading and editing the file by hand: several agents can touch it in the same window, and a Read-then-Edit race silently drops whichever item lost the race. The tool locks, dedupes by title, and requires the four fields (Status, Origin, Learning, How to apply) on every new item. An open item demonstrated solidly gets promoted to `mastered`, citing the task that proved it.
 
 ## Structure
 
@@ -64,7 +64,8 @@ workspace-for-agents/
 ├── README.md                  # installation and first steps
 ├── CLAUDE.md                  # pilot instructions (this file)
 ├── .env.example                # publishing configuration (copy to .env)
-├── learnings.md               # memory across repos/tasks (open/mastered items)
+├── learnings.md               # memory across repos/tasks (open/mastered items) — written only via tools/learnings.mjs
+├── learnings.template.md      # seed for a fork that wants to start with empty memory
 ├── workspace/<repo>/          # clonable code; its OWN git repo, clean — outside the harness's git
 ├── repos/<repo>/              # per-repo harness metadata
 │   ├── meta.json               # {"title","stack":[],"status","created","updated","workspace"}
@@ -102,6 +103,7 @@ workspace-for-agents/
 | Repo's live state (runtime\|ambiente\|origem sections, timestamped) | `node tools/estado.mjs set <repo> <secao>` ← stdin = section JSON · `node tools/estado.mjs show <repo>` |
 | Share a repo (public link) | `node tools/share.mjs <repo>` — only when the user asks and with `.env` configured (see `.env.example`); afterwards the viewer republishes on its own on every change (`--off` pauses it, `--delete` takes it down, `--sem-custos` publishes without tokens/USD) |
 | Deterministic workspace checks (structural/lint) | `node tools/check.mjs [<repo> [<task>]] [--lint]` · `--regras` lists every predicate · `--hook` is the `Stop`-hook entrypoint |
+| Write cross-task memory (`learnings.md`) | `node tools/learnings.mjs append --task <repo>/<task>` (stdin = one or more `## <title>` items, all 4 fields) · `promote "<title>" --task <repo>/<task>` · `note "<title>" "<text>"` |
 
 Both creation tools update `updated` in the `meta.json` files they touch. `meta.json` is edited by hand only to change `status` and `stack`.
 
