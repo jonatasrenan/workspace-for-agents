@@ -46,6 +46,13 @@ The user talks in natural language — they **don't** know or need to call tools
 - **Invisible backstage — also applies to the conversation**: the pilot drives focused on the target project; the replies talk about the work (what was done, next step in natural language) and never narrate internal mechanics: don't mention skills/commands ("/refinar is available"), don't announce ties to learnings ("I tied this to learnings on purpose" — learnings silently influences content), don't describe templates or the harness. Same spirit as the rule above about artifacts, extended to the conversation.
 - Mechanical IO (repo/task skeleton) is **never** hand-typed: always through the tools.
 
+## Deterministic checks
+
+`tools/check.mjs` runs no model — it is plain code checking the workspace. Two classes:
+
+- **Structural** (`node tools/check.mjs [<repo> [<task>]]`) — meta.json readable with the fields the panel needs, and a task marked `concluida` only with every DAG node `concluida`, no guardrail `pendente`/`falha`, and no question to the human left unanswered. These are wired into the `Stop` hook (`.claude/settings.json`) and **block the end of the turn**: a pending item comes back as text to act on, not a silent failure. A task some other conversation is still actively touching gets a short grace period, and `WFA_TASK=<repo>/<task>` scopes the hook to one task so it never blocks on another agent's in-progress work.
+- **Lints** (`--lint`) — quality-of-trail predicates (no internal-mechanics/evaluation vocabulary in artifacts, no artifact left as a stub, the DAG matches the plan, an accepted guardrail has its reason echoed in the journal, cost and commits are recorded, no unanswered question). They never block a turn — check them **before closing a task**, and they gate CI. `node tools/check.mjs --regras` prints what every predicate requires and returns.
+
 ## At the start of any session
 
 Read `learnings.md` and actively use the **open** items: warn before the user repeats the mistake, and watch exactly those areas during execution. When fixing something relevant or closing a review, add/update items — without duplicating; an open item demonstrated solidly gets promoted to `dominado`, citing the task that proved it.
@@ -94,6 +101,7 @@ workspace-for-agents/
 | Register/remove a repo access (URL) — Overview panel | `node tools/acessos.mjs add <repo> --nome N --url U --tipo app\|metricas\|dashboard\|outro [--nota "how to recreate the ephemeral URL"]` · `remove <repo> --nome N` · `list <repo>` |
 | Repo's live state (runtime\|ambiente\|origem sections, timestamped) | `node tools/estado.mjs set <repo> <secao>` ← stdin = section JSON · `node tools/estado.mjs show <repo>` |
 | Share a repo (public link) | `node tools/share.mjs <repo>` — only when the user asks and with `.env` configured (see `.env.example`); afterwards the viewer republishes on its own on every change (`--off` pauses it, `--delete` takes it down, `--sem-custos` publishes without tokens/USD) |
+| Deterministic workspace checks (structural/lint) | `node tools/check.mjs [<repo> [<task>]] [--lint]` · `--regras` lists every predicate · `--hook` is the `Stop`-hook entrypoint |
 
 Both creation tools update `updated` in the `meta.json` files they touch. `meta.json` is edited by hand only to change `status` and `stack`.
 

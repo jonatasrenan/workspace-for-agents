@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJson, updateJson } from './jsonfile.mjs';
 import { INSTALL_ROOT, stateRoot } from './root.mjs';
+import { fileURLToPath } from 'node:url';
 
 const ROOT = stateRoot();
 const NODE_STATUS = ['todo', 'executando', 'concluida', 'bloqueada'];
@@ -81,7 +82,7 @@ function touchMeta(taskDir) {
 // The guardrail catalog ships with the program (versioned, not per-repo state),
 // same reasoning as costs.mjs's price table: read it from INSTALL_ROOT so a DAG
 // validated against an external WFA_ROOT still checks against the real pool.
-function loadPool() {
+export function loadPool() {
   const file = path.join(INSTALL_ROOT, 'guardrails', 'pool.json');
   if (!fs.existsSync(file)) die('guardrail pool not found: guardrails/pool.json');
   let data;
@@ -123,7 +124,7 @@ function mutateDag(taskDir, taskName, repoSlug, fn) {
 }
 
 // Topological order (Kahn) stable by input order; returns null if there is a cycle.
-function topoOrder(nodes) {
+export function topoOrder(nodes) {
   const ids = nodes.map((n) => n.id);
   const restantes = new Map(nodes.map((n) => [n.id, new Set((n.depends_on ?? []).filter((d) => ids.includes(d)))]));
   const ordem = [];
@@ -141,7 +142,7 @@ function topoOrder(nodes) {
 
 // Validates the DAG against the pool. Normalizes defaults (guardrail status "pendente") in place.
 // Returns the list of ALL errors found (empty if ok).
-function validateDag(dag, pool) {
+export function validateDag(dag, pool) {
   const erros = [];
   if (!dag || typeof dag !== 'object' || Array.isArray(dag)) return ['root must be an object {"nodes":[...]}'];
   if (!Array.isArray(dag.nodes)) return ['"nodes" field missing or not a list'];
@@ -206,6 +207,10 @@ function grCounts(nodes) {
   return c;
 }
 
+// Guard: only run the CLI when this module is the entrypoint (allows importing
+// validateDag/topoOrder/loadPool — e.g. from tools/check.mjs — without side effects).
+const isEntrypoint = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isEntrypoint) {
 const [cmd, ...rest] = process.argv.slice(2);
 
 if (cmd === 'set') {
@@ -358,4 +363,5 @@ if (cmd === 'set') {
   console.log(`ok: valid DAG — ${dag.nodes.length} nodes, guardrails: ${c.pass} pass / ${c.falha} failed / ${c.pendente} pending / ${c.aceito} accepted`);
 } else {
   die('usage: node tools/dag.mjs <set|node-status|guardrail|show|pool|validate> [...]  (the file header documents each subcommand)');
+}
 }

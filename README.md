@@ -71,10 +71,15 @@ All of them run from the project root, with no magic arguments:
 | Repo access (URLs) | `node tools/acessos.mjs add\|remove\|list <repo> [...]` |
 | Repo live state | `node tools/estado.mjs set <repo> runtime\|ambiente\|origem` (stdin = JSON) · `show <repo>` |
 | Publish a repo | `node tools/share.mjs <repo> [--dry-run\|--off\|--delete\|--sem-custos]` |
+| Deterministic workspace checks | `node tools/check.mjs [<repo> [<task>]] [--lint]` · `--regras` · `--hook [--soft]` |
 
 ## Guardrails
 
 `guardrails/pool.json` is a catalog of reusable checks (each with an `aplica_a` list and a command/observation that proves it). When building the DAG, the pilot attaches to each node the guardrails whose `aplica_a` matches the node's tags. A node only closes as `concluida` once its guardrails are resolved — a failure can be explicitly **accepted**, with a recorded reason.
+
+## Deterministic checks
+
+`tools/check.mjs` runs no model — it's plain code checking the workspace, in two classes. **Structural** checks (`node tools/check.mjs [<repo> [<task>]]`) verify meta.json is readable with the fields the panel needs, and that a task marked `concluida` really has every DAG node done, no pending/failed guardrail, and no unanswered question to the human; they're wired into Claude Code's `Stop` hook (`.claude/settings.json`) and block the end of a turn until the pending item is addressed. **Lints** (`--lint`) check the quality of the trail (no internal-mechanics/evaluation vocabulary leaking into artifacts, no artifact left as a stub, the DAG matching the plan, accepted guardrails with a reason echoed in the journal, cost and commits recorded, no unanswered question) — these never block a turn, but fail when closing a task and in CI. Run `node tools/check.mjs --regras` to see exactly what each predicate requires and returns.
 
 ## Publishing a repo as a page
 
