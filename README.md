@@ -74,6 +74,7 @@ All of them run from the project root, with no magic arguments:
 | Publish a repo | `node tools/share.mjs <repo> [--dry-run\|--off\|--delete\|--sem-custos]` |
 | Deterministic workspace checks | `node tools/check.mjs [<repo> [<task>]] [--lint]` · `--regras` · `--hook [--soft]` |
 | Write cross-task memory | `node tools/learnings.mjs append --task <repo>/<task>` (stdin) · `promote "<title>" --task <repo>/<task>` · `note "<title>" "<text>"` |
+| PR review briefing / publish / CI gate | `node tools/pr-review.mjs [--base <ref>] [--head <sha>]` · `post [--pr N] [--dry-run] < verdict.json` · `verify --pr N --head <sha>` |
 
 ## Guardrails
 
@@ -95,6 +96,31 @@ node tools/share.mjs my-project             # publishes
 
 Without the variables configured, the command fails saying exactly what's missing. While the share is active, the viewer republishes the page on its own on every change to the repo; `--off` pauses the republishing (the page stays up) and `--delete` takes it down — this last one also needs the AWS credentials.
 
+## Before opening a PR
+
+There's no CI step that sends any content to a model, and none of the content
+under `repos/` or `workspace/` ever leaves this machine to be reviewed —
+that split is deliberate. **Judgment runs on your machine; CI only confirms
+it happened for this exact content.**
+
+```sh
+node tools/pr-review.mjs --base main         # briefing: commits, files by area, checks, diff, signature
+# read it (or hand it to a reviewer/model of your choosing), form a verdict, then:
+node tools/pr-review.mjs post <<'JSON'       # publishes the review as a PR comment
+{"verdict": "approved", "findings": [], "checked": ["tests", "lint"]}
+JSON
+```
+
+The review lives **in the PR**, not in a file in this repo: findings sit next
+to the diff where people actually read them, and the comment carries an
+embedded signature (a hash of the changed files and the diff content against
+the base). `.github/workflows/check.yml` runs syntax and the test suite on
+every push and PR, and — only on `pull_request` — `node tools/pr-review.mjs
+verify --pr N --head <sha>`, which fails unless a comment with a matching
+signature already exists; push a new commit and it fails again, asking for a
+fresh review. Reviewing someone else's PR without switching branches:
+`node tools/pr-review.mjs --head <their-sha>`.
+
 ## Structure
 
 ```
@@ -105,7 +131,9 @@ workspace-for-agents/
 ├── .claude/
 │   ├── agents/            # executors: k8s-operator, log-reader, metrics-reader,
 │   │                      # test-runner, adversarial-reviewer
-│   └── skills/            # flows: refinar, adversarial, retrospectiva
+│   ├── skills/            # flows: refinar, adversarial, retrospectiva
+│   └── settings.json      # Stop hook: node tools/check.mjs --hook
+├── .github/workflows/check.yml # CI: syntax, tests, pr-review.mjs verify gate
 ├── guardrails/pool.json   # catalog of reusable checks
 ├── tools/                 # Node tools (no dependencies)
 ├── viewer/                # local web panel (port 4500); vendor/ carries marked and mermaid

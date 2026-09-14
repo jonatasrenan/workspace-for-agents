@@ -86,6 +86,8 @@ workspace-for-agents/
 │       └── 30-review.md       # retrospective through the 4 lenses
 ├── .claude/agents/            # specialized executors
 ├── .claude/skills/            # pilot flows (refinar, adversarial, retrospectiva)
+├── .claude/settings.json      # Stop hook: node tools/check.mjs --hook
+├── .github/workflows/check.yml # CI: syntax, tests, pr-review.mjs verify gate
 ├── guardrails/pool.json       # catalog of reusable checks
 ├── tools/                     # Node tools (no dependencies)
 └── viewer/                    # web panel, port 4500
@@ -111,6 +113,7 @@ workspace-for-agents/
 | Share a repo (public link) | `node tools/share.mjs <repo>` — only when the user asks and with `.env` configured (see `.env.example`); afterwards the viewer republishes on its own on every change (`--off` pauses it, `--delete` takes it down, `--sem-custos` publishes without tokens/USD) |
 | Deterministic workspace checks (structural/lint) | `node tools/check.mjs [<repo> [<task>]] [--lint]` · `--regras` lists every predicate · `--hook` is the `Stop`-hook entrypoint |
 | Write cross-task memory (`learnings.md`) | `node tools/learnings.mjs append --task <repo>/<task>` (stdin = one or more `## <title>` items, all 4 fields) · `promote "<title>" --task <repo>/<task>` · `note "<title>" "<text>"` |
+| PR review briefing / publish / CI gate | `node tools/pr-review.mjs [--base <ref>] [--head <sha>]` · `post [--pr N] [--dry-run] < verdict.json` · `verify --pr N --head <sha>` |
 
 Both creation tools update `updated` in the `meta.json` files they touch. `meta.json` is edited by hand only to change `status` and `stack`.
 
