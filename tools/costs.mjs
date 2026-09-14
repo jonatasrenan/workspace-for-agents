@@ -10,10 +10,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJson, updateJson } from './jsonfile.mjs';
-import { fileURLToPath } from 'node:url';
+import { INSTALL_ROOT, stateRoot } from './root.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PRICES = JSON.parse(fs.readFileSync(path.join(ROOT, 'tools', 'prices.json'), 'utf8'));
+const ROOT = stateRoot();
+// The price table ships with the program, not with the caller's state: it has to
+// come from INSTALL_ROOT, or running against an external WFA_ROOT would look for
+// it there and fail.
+const PRICES = JSON.parse(fs.readFileSync(path.join(INSTALL_ROOT, 'tools', 'prices.json'), 'utf8'));
 
 function die(msg) {
   console.error(msg);

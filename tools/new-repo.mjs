@@ -7,10 +7,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { CONTEXTO_TEMPLATE, slugify } from './templates.mjs';
+import { stateRoot } from './root.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = stateRoot();
 const args = process.argv.slice(2);
 // Explicit parsing: the --slug value must not be confused with the title, and
 // an unknown flag is an error (silently ignoring it would create the wrong repo).

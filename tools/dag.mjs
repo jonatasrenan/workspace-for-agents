@@ -15,9 +15,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJson, updateJson } from './jsonfile.mjs';
-import { fileURLToPath } from 'node:url';
+import { INSTALL_ROOT, stateRoot } from './root.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = stateRoot();
 const NODE_STATUS = ['todo', 'executando', 'concluida', 'bloqueada'];
 const GR_STATUS = ['pendente', 'pass', 'falha', 'aceito'];
 
@@ -78,8 +78,11 @@ function touchMeta(taskDir) {
   });
 }
 
+// The guardrail catalog ships with the program (versioned, not per-repo state),
+// same reasoning as costs.mjs's price table: read it from INSTALL_ROOT so a DAG
+// validated against an external WFA_ROOT still checks against the real pool.
 function loadPool() {
-  const file = path.join(ROOT, 'guardrails', 'pool.json');
+  const file = path.join(INSTALL_ROOT, 'guardrails', 'pool.json');
   if (!fs.existsSync(file)) die('guardrail pool not found: guardrails/pool.json');
   let data;
   try {

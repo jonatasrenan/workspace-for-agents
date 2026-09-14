@@ -18,6 +18,13 @@
 //
 // Registry: .shares.json at the root (outside git):
 //   { "shares": { "<repo>": { uuid, url, auto, custos, publicado_em } } }
+//
+// Deliberately NOT using tools/root.mjs here: this script also reads the
+// viewer's own assets (viewer/public/*) from the same tree it computes ROOT
+// from, and it embeds the viewer's server module (buildState, below) directly
+// — splitting "state root" from "install root" the way the other tools do
+// would be a change of a different nature (which tree do the viewer assets
+// come from when WFA_ROOT and the install differ?), out of scope here.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

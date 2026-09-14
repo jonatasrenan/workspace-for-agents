@@ -10,9 +10,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJson, updateJson } from './jsonfile.mjs';
-import { fileURLToPath } from 'node:url';
+import { stateRoot } from './root.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = stateRoot();
 const TIPOS = ['app', 'metricas', 'dashboard', 'outro'];
 
 function die(msg) {

@@ -9,8 +9,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TASK_TEMPLATES, slugify } from './templates.mjs';
+import { stateRoot } from './root.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = stateRoot();
 
 // Resolves the --depends-on items (prefix "01" or full name) against the list
 // of existing tasks; returns full names, without duplicates. Throws an Error with a
