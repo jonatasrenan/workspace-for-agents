@@ -12,7 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { TEMPLATE_BY_FILE } from '../tools/templates.mjs';
-import { estadoDasPerguntas, perguntasAbertas, indiceDaReferencia, novoId } from '../tools/perguntas.mjs';
+import { questionStates, openQuestions, refIndex, newId } from '../tools/questions.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -106,10 +106,10 @@ function isStub(name, content) {
 }
 
 // question|decision messages addressed to the human, annotated with their
-// linked state (tools/perguntas.mjs — not a positional guess): each message
+// linked state (tools/questions.mjs — not a positional guess): each message
 // gets a `.pergunta` property when it's a question at all.
 function annotateQuestions(messages) {
-  const estados = estadoDasPerguntas(messages);
+  const estados = questionStates(messages);
   return messages.map((m, i) => {
     const e = estados[i];
     if (!e) return m;
@@ -510,7 +510,7 @@ function readTasks(repoDir, prices, wsDir) {
           : null;
       const tokens = sumTokens(costs);
       const usd = estimateUsd(costs, prices);
-      const awaitingMsgs = perguntasAbertas(messages).map((m) => ({ id: m.id, from: m.from, kind: m.kind, body: m.body }));
+      const awaitingMsgs = openQuestions(messages).map((m) => ({ id: m.id, from: m.from, kind: m.kind, body: m.body }));
       const messagesComPerguntas = annotateQuestions(messages);
       // task timing: real event window + target time from the statement. running =
       // task not yet completed with at least one event (the panel counts the elapsed time).
@@ -700,15 +700,15 @@ function handleBus(req, res) {
     if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return json(res, 400, { error: 'task does not exist' });
     const messagesFile = path.join(dir, 'messages.jsonl');
     const existing = readJsonl(messagesFile);
-    if (b.meta?.responde !== undefined && b.meta?.dispensa !== undefined) {
-      return json(res, 400, { error: 'meta cannot carry both "responde" and "dispensa"' });
+    if (b.meta?.answers !== undefined && b.meta?.dismisses !== undefined) {
+      return json(res, 400, { error: 'meta cannot carry both "answers" and "dismisses"' });
     }
-    const ref = b.meta?.responde ?? b.meta?.dispensa;
-    if (ref !== undefined && indiceDaReferencia(existing, ref) === -1) {
-      return json(res, 400, { error: `"${b.meta.responde !== undefined ? 'responde' : 'dispensa'}" references a message that does not exist: "${ref}"` });
+    const ref = b.meta?.answers ?? b.meta?.dismisses;
+    if (ref !== undefined && refIndex(existing, ref) === -1) {
+      return json(res, 400, { error: `"${b.meta.answers !== undefined ? 'answers' : 'dismisses'}" references a message that does not exist: "${ref}"` });
     }
     const ts = new Date().toISOString();
-    const msg = { id: novoId(ts), ts, from: 'humano', to, kind, body };
+    const msg = { id: newId(ts), ts, from: 'humano', to, kind, body };
     if (b.meta && typeof b.meta === 'object') msg.meta = b.meta;
     try {
       fs.appendFileSync(messagesFile, JSON.stringify(msg) + '\n');

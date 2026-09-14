@@ -1,9 +1,9 @@
 ---
-name: refinar
-description: Refines a task's statement — tightens the objective, requirements, measurable acceptance criteria, and target time with intermediate milestones — and rewrites 00-brief.md. Use when the user types /refinar, creates a new task, or complains that a statement is vague.
+name: refine
+description: Refines a task's statement — tightens the objective, requirements, measurable acceptance criteria, and target time with intermediate milestones — and rewrites 00-brief.md. Use when the user types /refine, creates a new task, or complains that a statement is vague.
 ---
 
-# /refinar — tighten a task's statement
+# /refine — tighten a task's statement
 
 A vague statement kills a task before it starts: without a measurable criterion there's no way to delegate well or know when it's done. This flow turns `00-brief.md` into an executable contract.
 

@@ -490,7 +490,7 @@ button.tab.panel-tab.waiting.active { background: color-mix(in srgb, var(--wait)
 .reply button:disabled { opacity: 0.5; cursor: default; }
 .reply-dismiss { background: transparent; color: var(--muted); border: 1px solid var(--border); }
 .reply-err { color: #ef4444; font-size: 12px; }
-/* question state — closes by an explicit link (tools/perguntas.mjs), not by
+/* question state — closes by an explicit link (tools/questions.mjs), not by
    message order, so the badge always names the real state, never a guess. */
 .perg-badge {
   display: inline-block;

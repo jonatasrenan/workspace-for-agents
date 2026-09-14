@@ -1,11 +1,11 @@
 // Access entries (live URLs) for a repo — repos/<repo>/acessos.json.
 // PUSH model: whoever opens/exposes an access entry registers it here; the viewer only renders.
-// An ephemeral URL (port-forward, tunnel) ALWAYS comes with --nota saying how to recreate it.
+// An ephemeral URL (port-forward, tunnel) ALWAYS comes with --note saying how to recreate it.
 // Usage:
-//   node tools/acessos.mjs add <repo> --nome N --url U --tipo app|metricas|dashboard|outro [--nota "..."]
+//   node tools/access.mjs add <repo> --name N --url U --type app|metricas|dashboard|outro [--note "..."]
 //     (upsert by nome: if it already exists, updates url/tipo/nota and registrado_em)
-//   node tools/acessos.mjs remove <repo> --nome N
-//   node tools/acessos.mjs list <repo>
+//   node tools/access.mjs remove <repo> --name N
+//   node tools/access.mjs list <repo>
 // Format: {"acessos":[{"nome","url","tipo","nota","registrado_em"}]}
 import fs from 'node:fs';
 import path from 'node:path';
@@ -87,25 +87,25 @@ function mutateAcessos(repoDir, fn) {
 const [cmd, ...rest] = process.argv.slice(2);
 
 if (cmd === 'add') {
-  const { flags, pos } = parseArgs(rest, ['nome', 'url', 'tipo', 'nota']);
+  const { flags, pos } = parseArgs(rest, ['name', 'url', 'type', 'note']);
   const [repoSlug] = pos;
-  if (!repoSlug || !flags.nome || !flags.url || !flags.tipo) {
-    die('usage: node tools/acessos.mjs add <repo> --nome N --url U --tipo app|metricas|dashboard|outro [--nota "..."]');
+  if (!repoSlug || !flags.name || !flags.url || !flags.type) {
+    die('usage: node tools/access.mjs add <repo> --name N --url U --type app|metricas|dashboard|outro [--note "..."]');
   }
-  if (!TIPOS.includes(flags.tipo)) die(`invalid tipo: "${flags.tipo}" — accepted: ${TIPOS.join(', ')}`);
+  if (!TIPOS.includes(flags.type)) die(`invalid tipo: "${flags.type}" — accepted: ${TIPOS.join(', ')}`);
   const repoDir = resolveRepo(repoSlug);
   let existente;
   const registro = {
-    nome: flags.nome,
+    nome: flags.name,
     url: flags.url,
-    tipo: flags.tipo,
-    nota: flags.nota ?? '',
+    tipo: flags.type,
+    nota: flags.note ?? '',
     registrado_em: new Date().toISOString(),
   };
   mutateAcessos(repoDir, (data) => {
-    existente = data.acessos.find((a) => a.nome === flags.nome);
+    existente = data.acessos.find((a) => a.nome === flags.name);
     if (existente) {
-      registro.nota = flags.nota ?? existente.nota ?? '';
+      registro.nota = flags.note ?? existente.nota ?? '';
       data.acessos[data.acessos.indexOf(existente)] = registro;
     } else {
       data.acessos.push(registro);
@@ -113,19 +113,19 @@ if (cmd === 'add') {
   });
   console.log(`access ${existente ? 'updated' : 'registered'}: ${registro.nome} [${registro.tipo}] ${registro.url} in repos/${repoSlug}/acessos.json`);
 } else if (cmd === 'remove') {
-  const { flags, pos } = parseArgs(rest, ['nome']);
+  const { flags, pos } = parseArgs(rest, ['name']);
   const [repoSlug] = pos;
-  if (!repoSlug || !flags.nome) die('usage: node tools/acessos.mjs remove <repo> --nome N');
+  if (!repoSlug || !flags.name) die('usage: node tools/access.mjs remove <repo> --name N');
   const repoDir = resolveRepo(repoSlug);
   mutateAcessos(repoDir, (data) => {
-    const idx = data.acessos.findIndex((a) => a.nome === flags.nome);
+    const idx = data.acessos.findIndex((a) => a.nome === flags.name);
     if (idx === -1) {
       const nomes = data.acessos.map((a) => a.nome);
-      die(`access not found: "${flags.nome}"${nomes.length ? ` — existing: ${nomes.join(', ')}` : ' — no access registered'}`);
+      die(`access not found: "${flags.name}"${nomes.length ? ` — existing: ${nomes.join(', ')}` : ' — no access registered'}`);
     }
     data.acessos.splice(idx, 1);
   });
-  console.log(`access removed: ${flags.nome} from repos/${repoSlug}/acessos.json`);
+  console.log(`access removed: ${flags.name} from repos/${repoSlug}/acessos.json`);
 } else if (cmd === 'list') {
   const { pos } = parseArgs(rest, []);
   const [repoSlug] = pos;
@@ -140,5 +140,5 @@ if (cmd === 'add') {
     console.log(`${a.nome} [${a.tipo}]  ${a.url}  (registered ${a.registrado_em})${nota}`);
   }
 } else {
-  die('usage: node tools/acessos.mjs <add|remove|list> <repo> [...]');
+  die('usage: node tools/access.mjs <add|remove|list> <repo> [...]');
 }

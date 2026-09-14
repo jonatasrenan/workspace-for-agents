@@ -1,8 +1,8 @@
 // Live state of a repo — repos/<repo>/estado.json, timestamped sections.
 // PUSH model: whoever touches the environment registers the state; the viewer only renders.
 // Usage:
-//   node tools/estado.mjs set <repo> <secao>   (stdin = the section's JSON; atualizado_em is written automatically)
-//   node tools/estado.mjs show <repo>
+//   node tools/state.mjs set <repo> <secao>   (stdin = the section's JSON; atualizado_em is written automatically)
+//   node tools/state.mjs show <repo>
 // Valid sections: runtime, ambiente, origem. Suggested formats:
 //   runtime  = {"deployments":[{"nome":"hello-k8s","ready":"2/2","restarts":0,"idade":"101m"}],
 //               "imagens":["hello-k8s:1.0.0"]}
@@ -58,11 +58,11 @@ const [cmd, ...rest] = process.argv.slice(2);
 
 if (cmd === 'set') {
   const [repoSlug, secao] = rest;
-  if (!repoSlug || !secao) die('usage: node tools/estado.mjs set <repo> <secao>  (stdin = the section\'s JSON)');
+  if (!repoSlug || !secao) die('usage: node tools/state.mjs set <repo> <secao>  (stdin = the section\'s JSON)');
   if (!SECOES.includes(secao)) die(`invalid section: "${secao}" — accepted: ${SECOES.join(', ')}`);
   const repoDir = resolveRepo(repoSlug);
   const stdin = fs.readFileSync(0, 'utf8').trim();
-  if (!stdin) die('stdin empty — send the section\'s JSON (e.g.: echo \'{"docker":"27.4.0"}\' | node tools/estado.mjs set <repo> ambiente)');
+  if (!stdin) die('stdin empty — send the section\'s JSON (e.g.: echo \'{"docker":"27.4.0"}\' | node tools/state.mjs set <repo> ambiente)');
   let dados;
   try {
     dados = JSON.parse(stdin);
@@ -91,5 +91,5 @@ if (cmd === 'set') {
   }
   console.log(JSON.stringify(estado, null, 2));
 } else {
-  die('usage: node tools/estado.mjs <set|show> <repo> [...]');
+  die('usage: node tools/state.mjs <set|show> <repo> [...]');
 }

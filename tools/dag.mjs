@@ -3,10 +3,10 @@
 // Usage:
 //   node tools/dag.mjs set <repo> <task>                    (reads the full DAG JSON from stdin)
 //   node tools/dag.mjs node-status <repo> <task> <nodeId> <todo|executando|concluida|bloqueada> [--force]
-//   node tools/dag.mjs guardrail <repo> <task> <nodeId> <guardrailId> <pass|falha|pendente> [--nota "..."]
-//   node tools/dag.mjs guardrail <repo> <task> <nodeId> <guardrailId> aceito --aceitar "reason"
+//   node tools/dag.mjs guardrail <repo> <task> <nodeId> <guardrailId> <pass|falha|pendente> [--note "..."]
+//   node tools/dag.mjs guardrail <repo> <task> <nodeId> <guardrailId> aceito --accept "reason"
 //   node tools/dag.mjs show <repo> <task>
-//   node tools/dag.mjs pool [--tag <tag>] [--categoria <cat>]
+//   node tools/dag.mjs pool [--tag <tag>] [--category <cat>]
 //   node tools/dag.mjs validate <repo> <task>
 // <task> accepts the full directory name OR just the numeric prefix ("01").
 // Format of dag.json (written to repos/<repo>/tasks/<task>/):
@@ -262,7 +262,7 @@ if (cmd === 'set') {
       die(
         `refused: node "${nodeId}" has ${abertos.length} unresolved guardrail(s):\n` +
           abertos.map((g) => `  - ${g.id} [${g.status}]`).join('\n') +
-          `\nresolve with: node tools/dag.mjs guardrail ${repoSlug} ${taskName} ${nodeId} <id> pass | aceito --aceitar "reason"`
+          `\nresolve with: node tools/dag.mjs guardrail ${repoSlug} ${taskName} ${nodeId} <id> pass | aceito --accept "reason"`
       );
     }
   }
@@ -285,14 +285,14 @@ if (cmd === 'set') {
   );
   console.log(`node "${nodeId}" → ${status}${flags.force ? ' (--force)' : ''} in repos/${repoSlug}/tasks/${taskName}/dag.json`);
 } else if (cmd === 'guardrail') {
-  const { flags, pos } = parseArgs(rest, ['nota', 'aceitar']);
+  const { flags, pos } = parseArgs(rest, ['note', 'accept']);
   const [repoSlug, taskArg, nodeId, guardrailId, status] = pos;
   if (!nodeId || !guardrailId || !status) {
-    die('usage: node tools/dag.mjs guardrail <repo> <task> <nodeId> <guardrailId> <pass|falha|pendente> [--nota "..."]\n     node tools/dag.mjs guardrail <repo> <task> <nodeId> <guardrailId> aceito --aceitar "reason"');
+    die('usage: node tools/dag.mjs guardrail <repo> <task> <nodeId> <guardrailId> <pass|falha|pendente> [--note "..."]\n     node tools/dag.mjs guardrail <repo> <task> <nodeId> <guardrailId> aceito --accept "reason"');
   }
   if (!GR_STATUS.includes(status)) die(`invalid status: "${status}" — accepted: ${GR_STATUS.join(', ')}`);
-  if (status === 'aceito' && !flags.aceitar) die('status "aceito" requires --aceitar "reason" — the reason is recorded in the guardrail\'s note');
-  if (status !== 'aceito' && flags.aceitar) die('--aceitar is only valid with status "aceito"');
+  if (status === 'aceito' && !flags.accept) die('status "aceito" requires --accept "reason" — the reason is recorded in the guardrail\'s note');
+  if (status !== 'aceito' && flags.accept) die('--accept is only valid with status "aceito"');
   const { taskDir, taskName } = resolveTask(repoSlug, taskArg);
   let nota = '';
   mutateDag(taskDir, taskName, repoSlug, (dag) => {
@@ -305,8 +305,8 @@ if (cmd === 'set') {
   gr.status = status;
   // The note belongs to the current verdict: a new verdict without a note must not inherit
   // the previous one's justification (a "pass" showing "aceito: no time" would lie).
-  if (status === 'aceito') gr.nota = `aceito: ${flags.aceitar}`;
-  else if (flags.nota !== undefined) gr.nota = flags.nota;
+  if (status === 'aceito') gr.nota = `aceito: ${flags.accept}`;
+  else if (flags.note !== undefined) gr.nota = flags.note;
   else delete gr.nota;
   nota = gr.nota ?? '';
   });
@@ -337,12 +337,12 @@ if (cmd === 'set') {
   const c = grCounts(dag.nodes);
   console.log(`\n${concluidos}/${dag.nodes.length} nodes done — guardrails: ${c.pass} pass / ${c.falha} failed / ${c.pendente} pending / ${c.aceito} accepted`);
 } else if (cmd === 'pool') {
-  const { flags } = parseArgs(rest, ['tag', 'categoria']);
+  const { flags } = parseArgs(rest, ['tag', 'category']);
   let pool = loadPool();
-  if (flags.categoria) pool = pool.filter((g) => g.categoria === flags.categoria);
+  if (flags.category) pool = pool.filter((g) => g.categoria === flags.category);
   if (flags.tag) pool = pool.filter((g) => (g.aplica_a ?? []).includes(flags.tag));
   if (!pool.length) {
-    const filtro = [flags.categoria && `categoria=${flags.categoria}`, flags.tag && `tag=${flags.tag}`].filter(Boolean).join(', ');
+    const filtro = [flags.category && `category=`, flags.tag && `tag=${flags.tag}`].filter(Boolean).join(', ');
     console.log(`(no guardrail in the pool${filtro ? ` with ${filtro}` : ''})`);
     process.exit(0);
   }

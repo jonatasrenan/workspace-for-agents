@@ -26,7 +26,7 @@ let mermaidSeq = 0;
 // tools/share.mjs publishes THIS SAME app with the repo's state embedded in
 // window.__DATA__: no SSE and no POST /api/bus (the Room becomes read-only,
 // questions to the human appear as a record), page updates via the page's own ETag.
-// __NO_COSTS__ = published with --sem-custos (Costs panel left out).
+// __NO_COSTS__ = published with --no-costs (Costs panel left out).
 const STATIC = !!window.__STATIC__;
 const NO_COSTS = !!window.__NO_COSTS__;
 
@@ -496,7 +496,7 @@ function renderTabs() {
 }
 
 // --- Room panel: timeline of the conversation between agents (and the human) ---
-// A question/decision to the human closes by an explicit LINK (tools/perguntas.mjs,
+// A question/decision to the human closes by an explicit LINK (tools/questions.mjs,
 // annotated server-side into m.pergunta), never by message order — so its badge and
 // its "closed by" line reflect m.pergunta.estado/.fechadaPor, not just "is there
 // something later".
@@ -542,8 +542,8 @@ function renderSala(task) {
 }
 const MSGKIND = (k) => (['report', 'question', 'decision', 'approval', 'status'].includes(k) ? k : 'report');
 
-// Posts a reply to /api/bus, linked to `msgId` via meta.responde or
-// meta.dispensa — the link is what closes the question, not just posting
+// Posts a reply to /api/bus, linked to `msgId` via meta.answers or
+// meta.dismisses — the link is what closes the question, not just posting
 // after it. On success, clears the draft and clears the submitting form's error.
 async function postSalaReply(f, { to, kind, body, msgId, link }) {
   const err = f.querySelector('.reply-err');
@@ -584,7 +584,7 @@ function wireSala(content) {
       const btns = f.querySelectorAll('button');
       btns.forEach((b) => (b.disabled = true));
       try {
-        await postSalaReply(f, { to: f.dataset.to, kind: f.dataset.kind, body, msgId, link: 'responde' });
+        await postSalaReply(f, { to: f.dataset.to, kind: f.dataset.kind, body, msgId, link: 'answers' });
         input.value = '';
         delete salaDrafts[input.dataset.key];
         salaStick = true; // the reply arrives via SSE — scroll to it
@@ -602,7 +602,7 @@ function wireSala(content) {
         const btns = f.querySelectorAll('button');
         btns.forEach((b) => (b.disabled = true));
         try {
-          await postSalaReply(f, { to: f.dataset.to, kind: 'status', body, msgId, link: 'dispensa' });
+          await postSalaReply(f, { to: f.dataset.to, kind: 'status', body, msgId, link: 'dismisses' });
           input.value = '';
           delete salaDrafts[input.dataset.key];
           salaStick = true;

@@ -81,7 +81,7 @@ test('gate/aguardando: an unanswered question blocks a concluida task; an explic
   assert.match(res.stdout, /gate.*unanswered/);
 
   // linking to it explicitly clears it
-  const answer = run(BUS, ['post', 'sonda', '01', '--from', 'humano', '--to', 'piloto', '--meta', `{"responde":"${id}"}`, '--kind', 'status', 'B'], { env });
+  const answer = run(BUS, ['post', 'sonda', '01', '--from', 'humano', '--to', 'piloto', '--meta', `{"answers":"${id}"}`, '--kind', 'status', 'B'], { env });
   assert.equal(answer.status, 0, answer.stderr);
   res = run(CHECK, ['sonda', '01'], { env });
   assert.equal(res.status, 0);
@@ -89,7 +89,7 @@ test('gate/aguardando: an unanswered question blocks a concluida task; an explic
   fs.rmSync(T, { recursive: true, force: true });
 });
 
-test('lint: aceito guardrail with no reason fails', () => {
+test('lint: accepted guardrail with no reason fails', () => {
   const { T, env } = makeRepoWithTask();
   const dagSet = run(DAG, ['set', 'sonda', '01'], {
     env,
@@ -99,12 +99,12 @@ test('lint: aceito guardrail with no reason fails', () => {
 
   const res = run(CHECK, ['sonda', '01', '--lint'], { env });
   assert.equal(res.status, 1);
-  assert.match(res.stdout, /\(aceito\).*no reason recorded/);
+  assert.match(res.stdout, /\(accepted\).*no reason recorded/);
 
   fs.rmSync(T, { recursive: true, force: true });
 });
 
-test('lint: aceito guardrail with a reason not echoed in the journal fails; echoing it passes', () => {
+test('lint: accepted guardrail with a reason not echoed in the journal fails; echoing it passes', () => {
   const { T, env, taskDir } = makeRepoWithTask();
   const dagSet = run(DAG, ['set', 'sonda', '01'], {
     env,
@@ -116,11 +116,11 @@ test('lint: aceito guardrail with a reason not echoed in the journal fails; echo
 
   let res = run(CHECK, ['sonda', '01', '--lint'], { env });
   assert.equal(res.status, 1);
-  assert.match(res.stdout, /\(aceito\).*not found in 20-journal\.md/);
+  assert.match(res.stdout, /\(accepted\).*not found in 20-journal\.md/);
 
   fs.appendFileSync(path.join(taskDir, '20-journal.md'), '\n10:00 — accepted: low risk here\n');
   res = run(CHECK, ['sonda', '01', '--lint'], { env });
-  assert.doesNotMatch(res.stdout, /\(aceito\)/);
+  assert.doesNotMatch(res.stdout, /\(accepted\)/);
 
   fs.rmSync(T, { recursive: true, force: true });
 });
@@ -138,7 +138,7 @@ test('lint: artifact still identical to the template fails as a stub', () => {
   fs.rmSync(T, { recursive: true, force: true });
 });
 
-test('lint: artifact naming internal engine mechanics fails jargao; jargao_permitido allows it', () => {
+test('lint: artifact naming internal engine mechanics fails jargon; allowed_jargon allows it', () => {
   const { T, env, taskDir } = makeRepoWithTask();
   setStatus(path.join(taskDir, 'meta.json'), 'em-andamento');
   fs.writeFileSync(
@@ -148,15 +148,15 @@ test('lint: artifact naming internal engine mechanics fails jargao; jargao_permi
 
   let res = run(CHECK, ['sonda', '01', '--lint'], { env });
   assert.equal(res.status, 1);
-  assert.match(res.stdout, /\(jargao\).*"bus\.mjs"/);
+  assert.match(res.stdout, /\(jargon\).*"bus\.mjs"/);
 
   const repoMetaPath = path.join(T, 'repos', 'sonda', 'meta.json');
   const repoMeta = JSON.parse(fs.readFileSync(repoMetaPath, 'utf8'));
-  repoMeta.jargao_permitido = { 'bus.mjs': 'this repo is literally about wrapping bus.mjs' };
+  repoMeta.allowed_jargon = { 'bus.mjs': 'this repo is literally about wrapping bus.mjs' };
   fs.writeFileSync(repoMetaPath, JSON.stringify(repoMeta, null, 2));
 
   res = run(CHECK, ['sonda', '01', '--lint'], { env });
-  assert.doesNotMatch(res.stdout, /\(jargao\)/);
+  assert.doesNotMatch(res.stdout, /\(jargon\)/);
 
   fs.rmSync(T, { recursive: true, force: true });
 });
@@ -210,12 +210,12 @@ test('vacuum: a root with no repos/ directory at all is declared, with its path,
 
   const structural = run(CHECK, [], { env });
   assert.equal(structural.status, 0);
-  assert.match(structural.stdout, /\[not-checked\] \(vacuo\) no repo in this root/);
+  assert.match(structural.stdout, /\[not-checked\] \(vacuum\) no repo in this root/);
   assert.match(structural.stdout, new RegExp(T.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 
   const lint = run(CHECK, ['--lint'], { env });
   assert.equal(lint.status, 0);
-  assert.match(lint.stdout, /\[not-checked\] \(vacuo\)/);
+  assert.match(lint.stdout, /\[not-checked\] \(vacuum\)/);
 
   fs.rmSync(T, { recursive: true, force: true });
 });
@@ -227,7 +227,7 @@ test('vacuum: a root with an EMPTY repos/ directory is also declared (not just a
 
   const res = run(CHECK, [], { env });
   assert.equal(res.status, 0);
-  assert.match(res.stdout, /\[not-checked\] \(vacuo\) no repo in this root/);
+  assert.match(res.stdout, /\[not-checked\] \(vacuum\) no repo in this root/);
 
   fs.rmSync(T, { recursive: true, force: true });
 });
@@ -240,7 +240,7 @@ test('vacuum: a repo named explicitly that does not exist stays a plain usage er
   const res = run(CHECK, ['does-not-exist'], { env });
   assert.equal(res.status, 1);
   assert.match(res.stderr, /repo not found/);
-  assert.doesNotMatch(res.stdout, /vacuo/);
+  assert.doesNotMatch(res.stdout, /vacuum/);
 
   fs.rmSync(T, { recursive: true, force: true });
 });
@@ -257,10 +257,10 @@ test('vacuum: --hook releases with a warning in stdout and exit 0, never blockin
   fs.rmSync(T, { recursive: true, force: true });
 });
 
-test('--regras documents every id used above, and refuses an unregistered id (internal consistency)', () => {
-  const res = run(CHECK, ['--regras'], {});
+test('--rules documents every id used above, and refuses an unregistered id (internal consistency)', () => {
+  const res = run(CHECK, ['--rules'], {});
   assert.equal(res.status, 0);
-  for (const id of ['meta', 'gate', 'vacuo', 'jargao', 'stub', 'dag', 'aceito', 'rastro', 'aguardando']) {
+  for (const id of ['meta', 'gate', 'vacuum', 'jargon', 'stub', 'dag', 'accepted', 'trail', 'awaiting']) {
     assert.match(res.stdout, new RegExp(`\\n${id}\\n`));
   }
 });

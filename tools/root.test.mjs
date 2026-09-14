@@ -62,7 +62,7 @@ test('a tool run as a process reads/writes state under WFA_ROOT, not the install
   assert.equal(post.status, 0, post.stderr);
   assert.ok(fs.existsSync(path.join(T, 'repos', slug, 'tasks', taskName, 'messages.jsonl')));
 
-  const cost = run([path.join(HERE, 'costs.mjs'), 'add', slug, taskName, '--agente', 'x', '--in', '10', '--out', '5'], { WFA_ROOT: T });
+  const cost = run([path.join(HERE, 'costs.mjs'), 'add', slug, taskName, '--agent', 'x', '--in', '10', '--out', '5'], { WFA_ROOT: T });
   assert.equal(cost.status, 0, cost.stderr);
   assert.ok(fs.existsSync(path.join(T, 'repos', slug, 'tasks', taskName, 'costs.jsonl')));
 

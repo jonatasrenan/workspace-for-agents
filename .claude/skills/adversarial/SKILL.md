@@ -20,7 +20,7 @@ description: Adversarial review of a stage of the active task — dispatches the
    - **confirmed** → decide with the user: fix now or accept as a risk (under tight target-time, `[LOW]` is almost always an accepted risk — say so);
    - **refuted** → record why (insufficient evidence or the agent's misreading);
    - the agent's "not verified — hypothesis" finding: verify it yourself before classifying.
-5. **Record the verdict per guardrail in the DAG**: `node tools/dag.mjs guardrail <repo> <task> <nodeId> <gid> pass|falha --nota "one-line evidence"`. A failure the human decides not to fix → `node tools/dag.mjs guardrail <repo> <task> <nodeId> <gid> aceito --aceitar "reason"` — and the reason also goes into `30-review.md`. A pending/failed guardrail blocks the node's `node-status concluida`, by design.
+5. **Record the verdict per guardrail in the DAG**: `node tools/dag.mjs guardrail <repo> <task> <nodeId> <gid> pass|falha --note "one-line evidence"`. A failure the human decides not to fix → `node tools/dag.mjs guardrail <repo> <task> <nodeId> <gid> aceito --accept "reason"` — and the reason also goes into `30-review.md`. A pending/failed guardrail blocks the node's `node-status concluida`, by design.
 6. **Record in the task's `30-review.md`** — cumulative, one section per review. The recorded text is read by third parties: neutral working voice, no evaluation vocabulary or agent names as process roles:
    - `## Independent review — <stage> — <hh:mm>`
    - table: finding · severity · status (**fixed** / **accepted as risk** / **refuted**) · one-line evidence or reason;

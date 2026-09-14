@@ -12,7 +12,7 @@
 //   node tools/check.mjs                     structural, every repo
 //   node tools/check.mjs <repo> [<task>]     structural, scoped
 //   node tools/check.mjs [<repo> [<task>]] --lint
-//   node tools/check.mjs --regras            what each predicate requires and returns
+//   node tools/check.mjs --rules            what each predicate requires and returns
 //   node tools/check.mjs --hook [--soft]     Stop-hook mode, stdin = the hook's JSON payload
 //
 // WFA_TASK=<repo>/<task> restricts --hook to one task (so one agent's
@@ -23,7 +23,7 @@ import path from 'node:path';
 import { stateRoot } from './root.mjs';
 import { validateDag, loadPool } from './dag.mjs';
 import { TEMPLATE_BY_FILE } from './templates.mjs';
-import { perguntasAbertas } from './perguntas.mjs';
+import { openQuestions } from './questions.mjs';
 
 const ROOT = stateRoot();
 const REPOS_DIR = path.join(ROOT, 'repos');
@@ -106,76 +106,76 @@ function mostRecentMtime(dir) {
 }
 
 // ---------------------------------------------------------------------------
-// REGRAS registry — the single source for the list AND the label of every
-// finding. finding() refuses an id that isn't registered here, so --regras
+// RULES registry — the single source for the list AND the label of every
+// finding. finding() refuses an id that isn't registered here, so --rules
 // (one screen: what each predicate requires and what it returns) never goes
 // stale relative to the code.
 // ---------------------------------------------------------------------------
-const STRUCT_REGRAS = {
+const STRUCT_RULES = {
   meta: {
-    tipo: 'structural',
-    requer: 'Every repo\'s and task\'s meta.json parses as JSON and has the fields the panel reads: title, status, created, updated (repo also: workspace, stack; task also: a status in todo|em-andamento|concluida).',
-    devolve: 'One "fail" per missing/invalid field or unreadable file.',
+    type: 'structural',
+    requires: 'Every repo\'s and task\'s meta.json parses as JSON and has the fields the panel reads: title, status, created, updated (repo also: workspace, stack; task also: a status in todo|em-andamento|concluida).',
+    returns: 'One "fail" per missing/invalid field or unreadable file.',
   },
   gate: {
-    tipo: 'structural',
-    requer: 'A task marked "concluida" has a dag.json with at least one node, every node concluida, no guardrail pendente/falha across any node, and no question/decision to the human left "aberta" (open) by tools/perguntas.mjs\'s link rule.',
-    devolve: 'One "fail" per violated condition, naming the offending node(s)/guardrail(s)/message(s).',
+    type: 'structural',
+    requires: 'A task marked "concluida" has a dag.json with at least one node, every node concluida, no guardrail pendente/falha across any node, and no question/decision to the human left "aberta" (open) by tools/questions.mjs\'s link rule.',
+    returns: 'One "fail" per violated condition, naming the offending node(s)/guardrail(s)/message(s).',
   },
-  vacuo: {
-    tipo: 'structural',
-    requer: 'The resolved root (WFA_ROOT, or this installation) actually has a repos/ directory with at least one repo in it — this only applies when no <repo> was named on the command line.',
-    devolve: '"not checked", naming the exact root path it ran against, when there is no repo at all. Never printed as passing/consistent: an empty root and a root that fully passed must never look the same in the output. A <repo> named explicitly that does not exist stays a plain usage error (exit 1), not this.',
+  vacuum: {
+    type: 'structural',
+    requires: 'The resolved root (WFA_ROOT, or this installation) actually has a repos/ directory with at least one repo in it — this only applies when no <repo> was named on the command line.',
+    returns: '"not checked", naming the exact root path it ran against, when there is no repo at all. Never printed as passing/consistent: an empty root and a root that fully passed must never look the same in the output. A <repo> named explicitly that does not exist stays a plain usage error (exit 1), not this.',
   },
 };
 
-const REGRAS = {
-  jargao: {
-    tipo: 'lint',
-    requer: 'No artifact (00-context.md, 00-brief.md, 10-plan.md, 20-journal.md, 30-review.md) names the engine\'s internal mechanics by naming a tool file, the viewer/panel, the harness itself, learnings.md, guardrails/pool.json, CLAUDE.md, or a pilot skill/slash command — and none uses interview/evaluation vocabulary (rubric, candidate, interview, evaluator, "how did I do", "what will be observed"). HTML comments in the .md don\'t count — they\'re template instructions, never rendered.',
-    devolve: 'One "fail" per matched term per file, with the term and an approximate line. A repo may allow a specific term by declaring "jargao_permitido": {"<term>": "<reason>"} in its own meta.json.',
+const RULES = {
+  jargon: {
+    type: 'lint',
+    requires: 'No artifact (00-context.md, 00-brief.md, 10-plan.md, 20-journal.md, 30-review.md) names the engine\'s internal mechanics by naming a tool file, the viewer/panel, the harness itself, learnings.md, guardrails/pool.json, CLAUDE.md, or a pilot skill/slash command — and none uses interview/evaluation vocabulary (rubric, candidate, interview, evaluator, "how did I do", "what will be observed"). HTML comments in the .md don\'t count — they\'re template instructions, never rendered.',
+    returns: 'One "fail" per matched term per file, with the term and an approximate line. A repo may allow a specific term by declaring "allowed_jargon": {"<term>": "<reason>"} in its own meta.json.',
   },
   stub: {
-    tipo: 'lint',
-    requer: 'A task that is todo, em-andamento or concluida has 00-brief.md and 10-plan.md filled in (not identical to the template).',
-    devolve: '"fail" per stub enunciado/plano; "warn" per stub 20-journal.md/30-review.md (these two don\'t block, but are still worth flagging).',
+    type: 'lint',
+    requires: 'A task that is todo, em-andamento or concluida has 00-brief.md and 10-plan.md filled in (not identical to the template).',
+    returns: '"fail" per stub enunciado/plano; "warn" per stub 20-journal.md/30-review.md (these two don\'t block, but are still worth flagging).',
   },
   dag: {
-    tipo: 'lint',
-    requer: 'A task whose 10-plan.md is filled in (not a stub) has a dag.json that validates with zero errors from the very validateDag() the `dag.mjs` CLI uses.',
-    devolve: '"fail" with the exact validateDag() error list when missing/invalid; "not checked" when the plan itself is still a stub — there is nothing to validate yet.',
+    type: 'lint',
+    requires: 'A task whose 10-plan.md is filled in (not a stub) has a dag.json that validates with zero errors from the very validateDag() the `dag.mjs` CLI uses.',
+    returns: '"fail" with the exact validateDag() error list when missing/invalid; "not checked" when the plan itself is still a stub — there is nothing to validate yet.',
   },
-  aceito: {
-    tipo: 'lint',
-    requer: 'Every DAG guardrail with status "aceito" has a reason recorded in its note (via --aceitar), and that reason\'s text also appears somewhere in 20-journal.md.',
-    devolve: '"fail" per accepted guardrail with a missing reason or a reason not echoed in the journal; "not checked" when the task has no accepted guardrail.',
+  accepted: {
+    type: 'lint',
+    requires: 'Every DAG guardrail with status "aceito" has a reason recorded in its note (via --accept), and that reason\'s text also appears somewhere in 20-journal.md.',
+    returns: '"fail" per accepted guardrail with a missing reason or a reason not echoed in the journal; "not checked" when the task has no accepted guardrail.',
   },
-  rastro: {
-    tipo: 'lint',
-    requer: 'A task marked "concluida" has at least one entry in costs.jsonl AND at least one in commits.jsonl.',
-    devolve: '"fail" naming which of the two is missing; "not checked" for a task not yet concluida.',
+  trail: {
+    type: 'lint',
+    requires: 'A task marked "concluida" has at least one entry in costs.jsonl AND at least one in commits.jsonl.',
+    returns: '"fail" naming which of the two is missing; "not checked" for a task not yet concluida.',
   },
-  aguardando: {
-    tipo: 'lint',
-    requer: 'A task marked "concluida" has no question/decision "aberta" per tools/perguntas.mjs (same rule as the "gate" structural check — a question closes by an explicit link, not by being followed by any later message).',
-    devolve: '"fail" with the count and a one-line excerpt of each; "not checked" for a task not yet concluida.',
+  awaiting: {
+    type: 'lint',
+    requires: 'A task marked "concluida" has no question/decision "aberta" per tools/questions.mjs (same rule as the "gate" structural check — a question closes by an explicit link, not by being followed by any later message).',
+    returns: '"fail" with the count and a one-line excerpt of each; "not checked" for a task not yet concluida.',
   },
 };
 
-const ALL_REGRAS = { ...STRUCT_REGRAS, ...REGRAS };
+const ALL_RULES = { ...STRUCT_RULES, ...RULES };
 
 function finding(id, level, extra) {
-  if (!ALL_REGRAS[id]) throw new Error(`internal error: unregistered check id "${id}" — add it to STRUCT_REGRAS/REGRAS first`);
+  if (!ALL_RULES[id]) throw new Error(`internal error: unregistered check id "${id}" — add it to STRUCT_RULES/RULES first`);
   return { id, level, ...extra };
 }
 
-function printRegras() {
-  for (const [cls, regras] of [['Structural (block the end of turn)', STRUCT_REGRAS], ['Lints (--lint; block task close + CI)', REGRAS]]) {
+function printRules() {
+  for (const [cls, rules] of [['Structural (block the end of turn)', STRUCT_RULES], ['Lints (--lint; block task close + CI)', RULES]]) {
     console.log(`\n${cls}\n${'='.repeat(cls.length)}`);
-    for (const [id, r] of Object.entries(regras)) {
+    for (const [id, r] of Object.entries(rules)) {
       console.log(`\n${id}`);
-      console.log(`  requires: ${r.requer}`);
-      console.log(`  returns:  ${r.devolve}`);
+      console.log(`  requires: ${r.requires}`);
+      console.log(`  returns:  ${r.returns}`);
     }
   }
 }
@@ -232,7 +232,7 @@ function structuralTask(repoSlug, repoDir, taskName) {
   }
 
   const messages = readJsonl(path.join(taskDir, 'messages.jsonl'));
-  const pending = perguntasAbertas(messages);
+  const pending = openQuestions(messages);
   if (pending.length) {
     out.push(finding('gate', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: marked concluida with ${pending.length} unanswered question(s)/decision(s) to the human` }));
   }
@@ -243,27 +243,34 @@ function structuralTask(repoSlug, repoDir, taskName) {
 // Lints
 // ---------------------------------------------------------------------------
 const TOOL_FILE_NAMES = [
-  'bus.mjs', 'costs.mjs', 'commits.mjs', 'acessos.mjs', 'estado.mjs', 'dag.mjs',
+  'bus.mjs', 'costs.mjs', 'commits.mjs', 'access.mjs', 'state.mjs', 'dag.mjs',
   'check.mjs', 'share.mjs', 'jsonfile.mjs', 'root.mjs', 'templates.mjs',
-  'new-repo.mjs', 'new-task.mjs', 'learnings.mjs', 'pr-review.mjs', 'perguntas.mjs',
+  'new-repo.mjs', 'new-task.mjs', 'learnings.mjs', 'pr-review.mjs', 'questions.mjs', 'migrate.mjs',
   'fs.mjs', 'server.mjs', 'app.js', 'style.css',
+  // pre-rename names: an artifact written before the tools were renamed names
+  // the engine just as loudly, and must keep failing this lint.
+  'acessos.mjs', 'estado.mjs', 'perguntas.mjs',
 ];
 const ENGINE_TERMS = [
   'guardrails/pool.json', 'learnings.md', 'CLAUDE.md', 'the viewer', 'the panel',
   'WFA_ROOT', 'WFA_TASK', 'messages.jsonl', 'logs.jsonl', 'costs.jsonl',
   'commits.jsonl', 'dag.json', 'agents.json', '.claude/agents', '.claude/skills',
 ];
-const SKILL_COMMANDS = ['/refinar', '/retrospectiva', '/adversarial'];
+const SKILL_COMMANDS = ['/refine', '/retrospective', '/adversarial', '/refine', '/retrospective'];
 // Deliberately conservative: only phrases specific enough that a false
 // positive is unlikely in ordinary technical writing. Bare words like
 // "score" or "judgment" are common enough in unrelated contexts (a caching
 // score, engineering judgment) that flagging them would just train people to
-// reach for jargao_permitido instead of reading the finding.
+// reach for allowed_jargon instead of reading the finding.
+// Both languages: artifacts are written in English now, but the voice this lint
+// refuses reads the same in Portuguese, and older trail is in it.
 const EVAL_VOICE_TERMS = [
   'evaluation vocabulary', 'evaluator', 'rubric', 'candidate', 'interview',
   'how did i do', 'what will be observed', 'score (1-5)', 'score 1-5',
+  'vocabulário de avaliação', 'avaliador', 'rubrica', 'candidato', 'entrevista',
+  'como me saí', 'o que será observado', 'nota (1-5)', 'nota 1-5',
 ];
-const JARGAO_TERMS = [...TOOL_FILE_NAMES, ...ENGINE_TERMS, ...SKILL_COMMANDS, ...EVAL_VOICE_TERMS];
+const JARGON_TERMS = [...TOOL_FILE_NAMES, ...ENGINE_TERMS, ...SKILL_COMMANDS, ...EVAL_VOICE_TERMS];
 
 const ARTIFACT_FILES = ['00-brief.md', '10-plan.md', '20-journal.md', '30-review.md'];
 
@@ -273,12 +280,12 @@ function lintJargaoInFile(repoSlug, taskName, filePath, fileLabel, allowed) {
   if (raw == null) return out;
   const content = stripHtmlComments(raw);
   const lower = content.toLowerCase();
-  for (const term of JARGAO_TERMS) {
+  for (const term of JARGON_TERMS) {
     if (allowed[term]) continue;
     const idx = lower.indexOf(term.toLowerCase());
     if (idx === -1) continue;
     const line = content.slice(0, idx).split('\n').length;
-    out.push(finding('jargao', 'fail', { repo: repoSlug, task: taskName, msg: `${repoSlug}${taskName ? `/${taskName}` : ''} ${fileLabel}:${line}: mentions "${term}" — internal mechanics/evaluation vocabulary don't belong in an artifact read by third parties (allow with jargao_permitido in meta.json if this repo's own subject legitimately needs the term)` }));
+    out.push(finding('jargon', 'fail', { repo: repoSlug, task: taskName, msg: `${repoSlug}${taskName ? `/${taskName}` : ''} ${fileLabel}:${line}: mentions "${term}" — internal mechanics/evaluation vocabulary don't belong in an artifact read by third parties (allow with allowed_jargon in meta.json if this repo's own subject legitimately needs the term)` }));
   }
   return out;
 }
@@ -287,7 +294,7 @@ function lintRepo(repoSlug, onlyTask) {
   const out = [];
   const repoDir = path.join(REPOS_DIR, repoSlug);
   const repoMeta = readJson(path.join(repoDir, 'meta.json')) || {};
-  const allowed = repoMeta.jargao_permitido && typeof repoMeta.jargao_permitido === 'object' ? repoMeta.jargao_permitido : {};
+  const allowed = repoMeta.allowed_jargon && typeof repoMeta.allowed_jargon === 'object' ? repoMeta.allowed_jargon : {};
 
   out.push(...lintJargaoInFile(repoSlug, null, path.join(repoDir, '00-context.md'), '00-context.md', allowed));
 
@@ -307,7 +314,7 @@ function lintTask(repoSlug, repoDir, taskName, allowed) {
   const meta = readJson(path.join(taskDir, 'meta.json'));
   const status = meta?.status ?? 'todo';
 
-  // jargao — every artifact file, regardless of task status
+  // jargon — every artifact file, regardless of task status
   for (const file of ARTIFACT_FILES) out.push(...lintJargaoInFile(repoSlug, taskName, path.join(taskDir, file), file, allowed));
 
   // stub — enunciado/plano block, journal/review warn; only meaningful once the
@@ -345,33 +352,33 @@ function lintTask(repoSlug, repoDir, taskName, allowed) {
   const dag2 = readJson(path.join(taskDir, 'dag.json'));
   const accepted = dag2?.nodes ? dag2.nodes.flatMap((n) => (n.guardrails ?? []).filter((g) => g.status === 'aceito').map((g) => ({ node: n.id, ...g }))) : [];
   if (!accepted.length) {
-    out.push(finding('aceito', 'not-checked', { repo: repoSlug, task: taskName, msg: `${ref}: no accepted guardrail` }));
+    out.push(finding('accepted', 'not-checked', { repo: repoSlug, task: taskName, msg: `${ref}: no accepted guardrail` }));
   } else {
     const journal = (contents['20-journal.md'] ?? '').toLowerCase();
     for (const g of accepted) {
       const reason = (g.nota ?? '').replace(/^aceito:\s*/i, '').trim();
       if (!reason) {
-        out.push(finding('aceito', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: guardrail "${g.id}" on node "${g.node}" is aceito with no reason recorded` }));
+        out.push(finding('accepted', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: guardrail "${g.id}" on node "${g.node}" is aceito with no reason recorded` }));
       } else if (!journal.includes(reason.toLowerCase())) {
-        out.push(finding('aceito', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: guardrail "${g.id}" on node "${g.node}" accepted with reason "${reason}", not found in 20-journal.md` }));
+        out.push(finding('accepted', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: guardrail "${g.id}" on node "${g.node}" accepted with reason "${reason}", not found in 20-journal.md` }));
       }
     }
   }
 
-  // rastro / aguardando — only meaningful once the task is concluida
+  // trail / awaiting — only meaningful once the task is concluida
   if (status !== 'concluida') {
-    out.push(finding('rastro', 'not-checked', { repo: repoSlug, task: taskName, msg: `${ref}: not concluida yet` }));
-    out.push(finding('aguardando', 'not-checked', { repo: repoSlug, task: taskName, msg: `${ref}: not concluida yet` }));
+    out.push(finding('trail', 'not-checked', { repo: repoSlug, task: taskName, msg: `${ref}: not concluida yet` }));
+    out.push(finding('awaiting', 'not-checked', { repo: repoSlug, task: taskName, msg: `${ref}: not concluida yet` }));
   } else {
     const costs = readJsonl(path.join(taskDir, 'costs.jsonl'));
     const commits = readJsonl(path.join(taskDir, 'commits.jsonl'));
     const missing = [!costs.length && 'costs.jsonl', !commits.length && 'commits.jsonl'].filter(Boolean);
-    if (missing.length) out.push(finding('rastro', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: concluida with no ${missing.join(' and ')} recorded` }));
+    if (missing.length) out.push(finding('trail', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: concluida with no ${missing.join(' and ')} recorded` }));
 
     const messages = readJsonl(path.join(taskDir, 'messages.jsonl'));
-    const pending = perguntasAbertas(messages);
+    const pending = openQuestions(messages);
     if (pending.length) {
-      out.push(finding('aguardando', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: ${pending.length} unanswered question(s) to the human — ${pending.map((m) => `"${String(m.body).slice(0, 60)}"`).join('; ')}` }));
+      out.push(finding('awaiting', 'fail', { repo: repoSlug, task: taskName, msg: `${ref}: ${pending.length} unanswered question(s) to the human — ${pending.map((m) => `"${String(m.body).slice(0, 60)}"`).join('; ')}` }));
     }
   }
 
@@ -400,15 +407,15 @@ function printFindings(findings, { quiet } = {}) {
 // CLI
 // ---------------------------------------------------------------------------
 function parseCli(argv) {
-  const flags = { lint: false, hook: false, soft: false, regras: false };
+  const flags = { lint: false, hook: false, soft: false, rules: false };
   const pos = [];
   for (const a of argv) {
     if (a === '--lint') flags.lint = true;
     else if (a === '--hook') flags.hook = true;
     else if (a === '--soft') flags.soft = true;
-    else if (a === '--regras') flags.regras = true;
+    else if (a === '--rules') flags.rules = true;
     else if (a.startsWith('--')) {
-      console.error(`unknown flag: ${a} — accepted: --lint, --hook, --soft, --regras`);
+      console.error(`unknown flag: ${a} — accepted: --lint, --hook, --soft, --rules`);
       process.exit(1);
     } else pos.push(a);
   }
@@ -528,8 +535,8 @@ function runHook() {
 function main() {
   const { flags, pos } = parseCli(process.argv.slice(2));
 
-  if (flags.regras) {
-    printRegras();
+  if (flags.rules) {
+    printRules();
     return;
   }
   if (flags.hook) {
@@ -540,7 +547,7 @@ function main() {
   const [repoArg, taskArg] = pos;
   const { repos, vacuumOk } = resolveTargetRepos(repoArg);
   if (!repos.length && vacuumOk) {
-    printFindings([finding('vacuo', 'not-checked', { msg: `no repo in this root (${ROOT})` })]);
+    printFindings([finding('vacuum', 'not-checked', { msg: `no repo in this root (${ROOT})` })]);
     process.exit(0);
   }
 

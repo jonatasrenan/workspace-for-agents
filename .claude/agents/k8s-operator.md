@@ -48,6 +48,6 @@ The pilot's briefing informs `<repo>` and `<task>` — use them in every command
 
 After **each** operation that changes the cluster (deploy, scale, delete, rollout, port-forward), update the repo's state before reporting — the Overview panel only shows what you register:
 
-- **Runtime** → `node tools/estado.mjs set <repo> runtime` with the JSON via stdin (heredoc), reflecting the REAL post-operation state: `{"deployments":[{"nome","ready":"2/2","restarts",N,"idade":"..."}],"imagens":["..."]}` (source: `kubectl get deployments,pods` and `minikube image ls`).
-- **Open access** (port-forward, exposed service) → `node tools/acessos.mjs add <repo> --nome N --url U --tipo app|metricas|dashboard|outro --nota "..."`. An ephemeral URL **always** with `--nota` stating the exact command to recreate it (e.g. `kubectl port-forward svc/<name> 8080:80`; remember that `minikube service --url` blocks the terminal on macOS's docker driver).
-- **Access taken down** (port-forward ended, service deleted) → `node tools/acessos.mjs remove <repo> --nome N` in the same act.
+- **Runtime** → `node tools/state.mjs set <repo> runtime` with the JSON via stdin (heredoc), reflecting the REAL post-operation state: `{"deployments":[{"nome","ready":"2/2","restarts",N,"idade":"..."}],"imagens":["..."]}` (source: `kubectl get deployments,pods` and `minikube image ls`).
+- **Open access** (port-forward, exposed service) → `node tools/access.mjs add <repo> --name N --url U --type app|metricas|dashboard|outro --note "..."`. An ephemeral URL **always** with `--note` stating the exact command to recreate it (e.g. `kubectl port-forward svc/<name> 8080:80`; remember that `minikube service --url` blocks the terminal on macOS's docker driver).
+- **Access taken down** (port-forward ended, service deleted) → `node tools/access.mjs remove <repo> --name N` in the same act.

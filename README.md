@@ -57,22 +57,22 @@ All of them run from the project root, with no magic arguments:
 |---|---|
 | Create repo | `node tools/new-repo.mjs "<Title>" [--slug <slug>]` |
 | Create task | `node tools/new-task.mjs <repo> "<Title>" [--depends-on "01,02"]` |
-| Message on the bus (Room) | `node tools/bus.mjs post <repo> <task> --from X --to Y --kind report\|question\|decision\|approval\|status "body"` — prints the message's id; close a question with `--meta '{"responde":"<id>"}'` or `'{"dispensa":"<id>"}'` |
+| Message on the bus (Room) | `node tools/bus.mjs post <repo> <task> --from X --to Y --kind report\|question\|decision\|approval\|status "body"` — prints the message's id; close a question with `--meta '{"answers":"<id>"}'` or `'{"dismisses":"<id>"}'` |
 | Operational log | `node tools/bus.mjs log <repo> <task> --level debug\|info\|warn\|error --source S "body"` |
 | Read messages | `node tools/bus.mjs read <repo> <task> [--to X] [--kind K] [--since ISO] [--tail N]` |
 | Agents that acted | `node tools/bus.mjs agents <repo> [<task>]` |
-| Record tokens | `node tools/costs.mjs add <repo> <task> --agente X (--in N --out N \| --total N) [--modelo m] [--label "..."]` |
+| Record tokens | `node tools/costs.mjs add <repo> <task> --agent X (--in N --out N \| --total N) [--model m] [--label "..."]` |
 | Cost report | `node tools/costs.mjs report [<repo> [<task>]]` |
 | Write the DAG | `node tools/dag.mjs set <repo> <task>` (stdin = JSON) |
 | Status of a node | `node tools/dag.mjs node-status <repo> <task> <nodeId> todo\|executando\|concluida\|bloqueada [--force]` |
-| Guardrail verdict | `node tools/dag.mjs guardrail <repo> <task> <nodeId> <gid> pass\|falha\|pendente [--nota "..."]` — accepted failure: `... aceito --aceitar "reason"` |
-| Catalog of guardrails | `node tools/dag.mjs pool [--tag t] [--categoria c]` |
+| Guardrail verdict | `node tools/dag.mjs guardrail <repo> <task> <nodeId> <gid> pass\|falha\|pendente [--note "..."]` — accepted failure: `... aceito --accept "reason"` |
+| Catalog of guardrails | `node tools/dag.mjs pool [--tag t] [--category c]` |
 | View / validate DAG | `node tools/dag.mjs show <repo> <task>` · `validate <repo> <task>` |
 | Record a commit on the task | `node tools/commits.mjs add <repo> <task> <hash> [--msg "..."]` · `list <repo> <task>` |
-| Repo access (URLs) | `node tools/acessos.mjs add\|remove\|list <repo> [...]` |
-| Repo live state | `node tools/estado.mjs set <repo> runtime\|ambiente\|origem` (stdin = JSON) · `show <repo>` |
-| Publish a repo | `node tools/share.mjs <repo> [--dry-run\|--off\|--delete\|--sem-custos]` |
-| Deterministic workspace checks | `node tools/check.mjs [<repo> [<task>]] [--lint]` · `--regras` · `--hook [--soft]` |
+| Repo access (URLs) | `node tools/access.mjs add\|remove\|list <repo> [...]` |
+| Repo live state | `node tools/state.mjs set <repo> runtime\|ambiente\|origem` (stdin = JSON) · `show <repo>` |
+| Publish a repo | `node tools/share.mjs <repo> [--dry-run\|--off\|--delete\|--no-costs]` |
+| Deterministic workspace checks | `node tools/check.mjs [<repo> [<task>]] [--lint]` · `--rules` · `--hook [--soft]` |
 | Write cross-task memory | `node tools/learnings.mjs append --task <repo>/<task>` (stdin) · `promote "<title>" --task <repo>/<task>` · `note "<title>" "<text>"` |
 | PR review briefing / publish / CI gate | `node tools/pr-review.mjs [--base <ref>] [--head <sha>]` · `post [--pr N] [--dry-run] < verdict.json` · `verify --pr N --head <sha>` |
 
@@ -82,7 +82,7 @@ All of them run from the project root, with no magic arguments:
 
 ## Deterministic checks
 
-`tools/check.mjs` runs no model — it's plain code checking the workspace, in two classes. **Structural** checks (`node tools/check.mjs [<repo> [<task>]]`) verify meta.json is readable with the fields the panel needs, and that a task marked `concluida` really has every DAG node done, no pending/failed guardrail, and no unanswered question to the human; they're wired into Claude Code's `Stop` hook (`.claude/settings.json`) and block the end of a turn until the pending item is addressed. **Lints** (`--lint`) check the quality of the trail (no internal-mechanics/evaluation vocabulary leaking into artifacts, no artifact left as a stub, the DAG matching the plan, accepted guardrails with a reason echoed in the journal, cost and commits recorded, no unanswered question) — these never block a turn, but fail when closing a task and in CI. Run `node tools/check.mjs --regras` to see exactly what each predicate requires and returns.
+`tools/check.mjs` runs no model — it's plain code checking the workspace, in two classes. **Structural** checks (`node tools/check.mjs [<repo> [<task>]]`) verify meta.json is readable with the fields the panel needs, and that a task marked `concluida` really has every DAG node done, no pending/failed guardrail, and no unanswered question to the human; they're wired into Claude Code's `Stop` hook (`.claude/settings.json`) and block the end of a turn until the pending item is addressed. **Lints** (`--lint`) check the quality of the trail (no internal-mechanics/evaluation vocabulary leaking into artifacts, no artifact left as a stub, the DAG matching the plan, accepted guardrails with a reason echoed in the journal, cost and commits recorded, no unanswered question) — these never block a turn, but fail when closing a task and in CI. Run `node tools/check.mjs --rules` to see exactly what each predicate requires and returns.
 
 ## Publishing a repo as a page
 
@@ -131,7 +131,7 @@ workspace-for-agents/
 ├── .claude/
 │   ├── agents/            # executors: k8s-operator, log-reader, metrics-reader,
 │   │                      # test-runner, adversarial-reviewer
-│   ├── skills/            # flows: refinar, adversarial, retrospectiva
+│   ├── skills/            # flows: refine, adversarial, retrospective
 │   └── settings.json      # Stop hook: node tools/check.mjs --hook
 ├── .github/workflows/check.yml # CI: syntax, tests, pr-review.mjs verify gate
 ├── guardrails/pool.json   # catalog of reusable checks

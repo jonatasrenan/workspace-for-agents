@@ -3,7 +3,7 @@
 // THE USER: edit/add models freely; "default" covers an unknown model or a record
 // without in/out split — in those cases the USD is marked with "~" (estimate).
 // Usage:
-//   node tools/costs.mjs add <repo> <task> --agente X [--in N] [--out N] [--total N] [--modelo m] [--label "..."]
+//   node tools/costs.mjs add <repo> <task> --agent X [--in N] [--out N] [--total N] [--model m] [--label "..."]
 //   node tools/costs.mjs report [<repo> [<task>]]
 //     no args → whole project, aggregated by repo; with repo → by task; with repo+task → by agent.
 // <task> accepts the full directory name OR just the numeric prefix ("01").
@@ -165,10 +165,10 @@ function printTable(titulo, grupos) {
 const [cmd, ...rest] = process.argv.slice(2);
 
 if (cmd === 'add') {
-  const { flags, pos } = parseArgs(rest, ['agente', 'in', 'out', 'total', 'modelo', 'label']);
+  const { flags, pos } = parseArgs(rest, ['agent', 'in', 'out', 'total', 'model', 'label']);
   const [repoSlug, taskArg] = pos;
-  if (!repoSlug || !taskArg || !flags.agente) {
-    die('usage: node tools/costs.mjs add <repo> <task> --agente X [--in N] [--out N] [--total N] [--modelo m] [--label "..."]');
+  if (!repoSlug || !taskArg || !flags.agent) {
+    die('usage: node tools/costs.mjs add <repo> <task> --agent X [--in N] [--out N] [--total N] [--model m] [--label "..."]');
   }
   const tokensIn = parseNum(flags, 'in');
   const tokensOut = parseNum(flags, 'out');
@@ -179,16 +179,16 @@ if (cmd === 'add') {
   }
   if (temSplit && total === undefined) total = tokensIn + tokensOut;
   const { taskDir, taskName } = resolveTask(repoSlug, taskArg);
-  const registro = { ts: new Date().toISOString(), agente: flags.agente };
+  const registro = { ts: new Date().toISOString(), agente: flags.agent };
   if (tokensIn !== undefined) registro.tokens_in = tokensIn;
   if (tokensOut !== undefined) registro.tokens_out = tokensOut;
   registro.tokens_total = total;
-  if (flags.modelo) registro.modelo = flags.modelo;
+  if (flags.model) registro.modelo = flags.model;
   if (flags.label) registro.label = flags.label;
   fs.appendFileSync(path.join(taskDir, 'costs.jsonl'), JSON.stringify(registro) + '\n');
   touchMeta(taskDir);
   const { usd, approx } = entryCost(registro);
-  console.log(`cost recorded: ${flags.agente} ${registro.tokens_total.toLocaleString('en-US')} tokens (${approx ? '~' : ''}$${usd.toFixed(2)}) in repos/${repoSlug}/tasks/${taskName}/costs.jsonl`);
+  console.log(`cost recorded: ${flags.agent} ${registro.tokens_total.toLocaleString('en-US')} tokens (${approx ? '~' : ''}$${usd.toFixed(2)}) in repos/${repoSlug}/tasks/${taskName}/costs.jsonl`);
 } else if (cmd === 'report') {
   const { pos } = parseArgs(rest, []);
   const [repoSlug, taskArg] = pos;

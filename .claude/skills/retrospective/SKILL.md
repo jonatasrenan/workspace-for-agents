@@ -1,9 +1,9 @@
 ---
-name: retrospectiva
-description: Closes a task's execution by looking at it through the studio's 4 lenses (problem decomposition, delegation and tool choice, pace and parallelism, decisions and scope cuts), each anchored in the journal and the git log, with gaps and an improvement plan in 30-review.md. Use when the user types /retrospectiva, or when closing a task.
+name: retrospective
+description: Closes a task's execution by looking at it through the studio's 4 lenses (problem decomposition, delegation and tool choice, pace and parallelism, decisions and scope cuts), each anchored in the journal and the git log, with gaps and an improvement plan in 30-review.md. Use when the user types /retrospective, or when closing a task.
 ---
 
-# /retrospectiva — close the execution through the 4 lenses
+# /retrospective — close the execution through the 4 lenses
 
 A retrospective exists to improve the next execution. A soft, feel-good pass destroys the purpose — be rigorous; the yardstick is "would this execution hold up under a senior colleague's critical review?".
 

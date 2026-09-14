@@ -3,7 +3,7 @@
 //
 // Usage:
 //   node tools/share.mjs <repo>                  # generates and publishes (creates a uuid the 1st time)
-//   node tools/share.mjs <repo> --sem-custos     # publishes without the Costs panel / token badges
+//   node tools/share.mjs <repo> --no-costs     # publishes without the Costs panel / token badges
 //   node tools/share.mjs <repo> --dry-run        # only generates the local html, shows the path
 //   node tools/share.mjs <repo> --off            # pauses automatic republishing (page stays up)
 //   node tools/share.mjs <repo> --delete         # takes it down (removes from S3 + deletes the record)
@@ -86,19 +86,19 @@ const dry = args.includes('--dry-run');
 const quiet = args.includes('--quiet');
 const off = args.includes('--off');
 const del = args.includes('--delete');
-const semCustos = args.includes('--sem-custos');
+const noCosts = args.includes('--no-costs');
 const log = (...a) => !quiet && console.log(...a);
 
 if (!slug || /[/\\]|\.\./.test(slug)) {
-  console.error('usage: node tools/share.mjs <repo> [--sem-custos|--dry-run|--off|--delete|--quiet]');
+  console.error('usage: node tools/share.mjs <repo> [--no-costs|--dry-run|--off|--delete|--quiet]');
   process.exit(1);
 }
 // An unknown flag must NEVER go through: a mistyped "--dry-runn" would actually
 // publish to S3, which is this project's only irreversible action.
-const FLAGS_VALIDAS = ['--dry-run', '--quiet', '--off', '--delete', '--sem-custos'];
-const desconhecidas = args.filter((a) => a.startsWith('--') && !FLAGS_VALIDAS.includes(a));
-if (desconhecidas.length) {
-  console.error(`unknown flag: ${desconhecidas.join(', ')} — accepted: ${FLAGS_VALIDAS.join(', ')}`);
+const VALID_FLAGS = ['--dry-run', '--quiet', '--off', '--delete', '--no-costs'];
+const unknown = args.filter((a) => a.startsWith('--') && !VALID_FLAGS.includes(a));
+if (unknown.length) {
+  console.error(`unknown flag: ${unknown.join(', ')} — accepted: ${VALID_FLAGS.join(', ')}`);
   process.exit(1);
 }
 const posicionais = args.filter((a) => !a.startsWith('--'));
@@ -194,9 +194,9 @@ for (const t of repo.tasks || []) {
 const agentDefs = {};
 for (const [name, def] of Object.entries(full.agentDefs || {})) if (agentNames.has(name)) agentDefs[name] = def;
 
-// --sem-custos: the numbers disappear from the PAYLOAD (not just the screen) — the
+// --no-costs: the numbers disappear from the PAYLOAD (not just the screen) — the
 // published page carries no token/USD figures at all; the flag stays in the record and applies to republishes.
-if (semCustos) {
+if (noCosts) {
   for (const t of repo.tasks || []) {
     t.costs = [];
     t.tokens = { in: 0, out: 0, total: 0 };
@@ -279,7 +279,7 @@ const title = `${repo.title} — Workspace for Agents`;
 
 const bootstrap = `
 window.__STATIC__ = true;
-window.__NO_COSTS__ = ${semCustos ? 'true' : 'false'};
+window.__NO_COSTS__ = ${noCosts ? 'true' : 'false'};
 window.__BUILD_AT__ = "${buildAt}";
 window.__APP_HASH__ = "${appHash}";
 window.__DATA__ = ${dataJson};`;
@@ -341,7 +341,7 @@ try {
   process.exit(1);
 }
 
-shares[slug] = { uuid, url, auto: true, custos: !semCustos, publicado_em: buildAt };
+shares[slug] = { uuid, url, auto: true, custos: !noCosts, publicado_em: buildAt };
 writeShares(shares);
 log(`✅ ${url}`);
 process.exit(0);
